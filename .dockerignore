@@ -1,0 +1,16 @@
+# Keep the build context to exactly what the image needs.
+# `.env` must never enter an image layer: secrets belong to the platform's
+# environment, not to a build artifact.
+.venv/
+.env
+.git/
+.pytest_cache/
+__pycache__/
+*.pyc
+tests/
+samples/
+node_modules/
+package-lock.json
+README.md
+Dockerfile
+.dockerignore

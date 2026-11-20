@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#060a0f" />
+  <meta name="description" content="KathaPulse AI - dialect-aware medication safety and medicine strip verification." />
+  <title>KathaPulse AI</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">◉</span>
+      <span class="brand-name">KathaPulse<span class="brand-ai"> AI</span></span>
+    </div>
+    <label class="lang-field">
+      <span class="visually-hidden">Language</span>
+      <select id="language" aria-label="Warning language">
+        <option value="ml" selected lang="ml">മലയാളം</option>
+        <option value="hi" lang="hi">हिन्दी</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+  </header>
+
+  <main id="main">
+    <!-- Privacy strip: always visible, no scroll needed -->
+    <p class="privacy-note" id="privacy-note">
+      <span class="privacy-icon" aria-hidden="true">🛡</span>
+      <span>മെറ്റാഡാറ്റ നീക്കം ചെയ്യുന്നു · Photo metadata is stripped on this phone · ചിത്രം സേവ് ചെയ്യുന്നില്ല</span>
+    </p>
+
+    <!-- 0. Demo presets: a live pitch cannot depend on a camera or a strip -->
+    <section class="presets" aria-labelledby="presets-title">
+      <h2 class="presets-title" id="presets-title">
+        ഡെമോ കേസുകൾ <span class="presets-title-en">· Demo cases</span>
+      </h2>
+      <div class="preset-row">
+        <button type="button" class="preset preset-critical" data-demo="dup-lasa">
+          <span class="preset-name">Telma 40 + Telma-H</span>
+          <span class="preset-tag">ഇരട്ട + LASA</span>
+        </button>
+        <button type="button" class="preset preset-critical" data-demo="dup-para">
+          <span class="preset-name">Dolo 650 + Crocin Cold &amp; Flu</span>
+          <span class="preset-tag">പാരാസെറ്റമോൾ ×2</span>
+        </button>
+        <button type="button" class="preset preset-warning" data-demo="lasa-alone">
+          <span class="preset-name">Amaryl 1 mg</span>
+          <span class="preset-tag">LASA · Amlopres</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 1. Capture -->
+    <section class="card capture-card" aria-labelledby="capture-title">
+      <h1 id="capture-title" class="capture-title">സ്ട്രിപ്പ് ഫോട്ടോ എടുക്കുക</h1>
+      <p class="capture-sub">Show the medicine strip to the camera</p>
+
+      <div class="viewport" id="viewport">
+        <video id="video" playsinline muted autoplay hidden></video>
+        <canvas id="preview" class="preview" hidden></canvas>
+        <div class="viewport-placeholder" id="placeholder">
+          <span aria-hidden="true">💊</span>
+          <p>Camera ready when you tap below</p>
+        </div>
+        <div class="scan-frame" aria-hidden="true"></div>
+      </div>
+
+      <div class="actions">
+        <button type="button" id="start-camera" class="btn btn-primary">
+          ക്യാമറ തുറക്കുക <span class="btn-en">Open camera</span>
+        </button>
+        <button type="button" id="shutter" class="btn btn-primary" hidden>
+          ഫോട്ടോ എടുക്കുക <span class="btn-en">Capture</span>
+        </button>
+        <label class="btn btn-secondary file-btn">
+          ചിത്രം തിരഞ്ഞെടുക്കുക <span class="btn-en">Choose photo</span>
+          <input type="file" id="file-input" accept="image/*" capture="environment" />
+        </label>
+      </div>
+
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+
+      <!-- Progress: three named steps, driven by the client state machine -->
+      <ol class="steps" id="steps" hidden aria-label="Progress">
+        <li data-step="scrub"><span class="dot" aria-hidden="true"></span>മെറ്റാഡാറ്റ നീക്കുന്നു</li>
+        <li data-step="send"><span class="dot" aria-hidden="true"></span>അയക്കുന്നു</li>
+        <li data-step="check"><span class="dot" aria-hidden="true"></span>പരിശോധിക്കുന്നു</li>
+      </ol>
+    </section>
+
+    <!-- 2. Error boundary: localised, retryable, never a dead end -->
+    <section class="card error-card" id="error-card" role="alert" hidden aria-labelledby="error-title">
+      <div class="error-head">
+        <span class="error-icon" aria-hidden="true">⚠</span>
+        <h2 id="error-title" class="error-title">സാങ്കേതിക തകരാർ</h2>
+      </div>
+      <p class="error-body" id="error-body"></p>
+      <button type="button" id="retry" class="btn btn-primary">വീണ്ടും ശ്രമിക്കുക</button>
+    </section>
+
+    <!-- 3. Manual entry (fallback when the strip cannot be read) -->
+    <section class="card manual-card" id="manual-card" aria-labelledby="manual-title" hidden>
+      <h2 id="manual-title" class="card-title">മരുന്നിന്റെ പേര് ടൈപ്പ് ചെയ്യുക</h2>
+      <p class="card-sub">Type the name printed on the strip, one per line</p>
+      <form id="manual-form">
+        <label class="visually-hidden" for="manual-input">Medicine names</label>
+        <textarea id="manual-input" rows="3" placeholder="Dolo 650&#10;Crocin 500" maxlength="600"></textarea>
+        <button type="submit" class="btn btn-primary">പരിശോധിക്കുക <span class="btn-en">Check</span></button>
+      </form>
+    </section>
+
+    <!-- 4. Result -->
+    <section id="result" class="result" aria-live="assertive" hidden>
+      <div class="verdict" id="verdict">
+        <span class="verdict-icon" id="verdict-icon" aria-hidden="true"></span>
+        <div class="verdict-text">
+          <p class="verdict-label" id="verdict-label"></p>
+          <p class="verdict-detail" id="verdict-detail"></p>
+        </div>
+      </div>
+
+      <div class="speech-bar">
+        <button type="button" id="speak" class="btn btn-speak">
+          <span aria-hidden="true">🔊</span> കേൾക്കുക <span class="btn-en">Listen</span>
+        </button>
+        <button type="button" id="stop-speak" class="btn btn-ghost" hidden>
+          നിർത്തുക <span class="btn-en">Stop</span>
+        </button>
+      </div>
+      <p class="speech-warning" id="speech-warning" hidden></p>
+
+      <!-- Offline fallback: the script is always on screen, so a device with no
+           Malayalam/Hindi voice still gets the full warning as text. -->
+      <div class="spoken-panel" id="spoken-panel" hidden>
+        <p class="spoken-label" id="spoken-label">
+          ഉച്ചത്തിൽ വായിക്കുക · Read aloud
+        </p>
+        <p class="spoken-script" id="spoken-script"></p>
+      </div>
+
+      <h2 class="visually-hidden">Warnings</h2>
+      <ul class="findings" id="findings"></ul>
+
+      <details class="matched-box" id="matched-box">
+        <summary>Detected medicines · കണ്ടെത്തിയ മരുന്നുകൾ</summary>
+        <ul id="matched-list"></ul>
+      </details>
+
+      <p class="disclaimer" id="disclaimer"></p>
+      <p class="memory-proof" id="memory-proof"></p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>KathaPulse AI · Kochi pilot · Screening aid only</p>
+  </footer>
+
+  <script src="/static/js/state.js" defer></script>
+  <script src="/static/js/capture.js" defer></script>
+  <script src="/static/js/speech.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+</body>
+</html>

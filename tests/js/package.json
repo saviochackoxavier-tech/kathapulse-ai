@@ -1,0 +1,12 @@
+{
+  "name": "kathapulse-js-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node exif-scrub.test.mjs"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^0.1.65",
+    "jsdom": "^24.1.3"
+  }
+}
