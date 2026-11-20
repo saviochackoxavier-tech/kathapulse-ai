@@ -77,6 +77,7 @@ body {
 
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; /* a 320px phone would otherwise push the language picker off-screen */
   gap: 12px; padding: 12px 16px;
   padding-top: calc(12px + env(safe-area-inset-top));
   background: var(--void-2);
@@ -94,7 +95,9 @@ body {
 }
 .brand-ai { color: var(--emerald); }
 
+.lang-field { margin-left: auto; }
 .lang-field select {
+  max-width: 100%;
   min-height: 46px; padding: 8px 12px;
   font-size: 17px; font-weight: 700; font-family: inherit;
   color: var(--text); background: var(--panel-2);
@@ -220,7 +223,7 @@ main { padding: 16px; max-width: 660px; margin: 0 auto; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: 8px; flex-wrap: wrap;
-  min-height: var(--tap); padding: 12px 18px;
+  min-height: var(--tap); padding: 12px 18px; min-width: 0;
   font-family: inherit; font-size: 19px; font-weight: 800;
   border-radius: 12px; border: 2px solid transparent;
   cursor: pointer; text-align: center; touch-action: manipulation;
@@ -375,7 +378,11 @@ textarea::placeholder { color: #6b7d99; }
 
 /* ----------------------------------------------------------------- audio */
 
-.speech-bar { display: flex; gap: 10px; margin-bottom: 10px; }
+.speech-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+/* Malayalam labels are wide: trim the horizontal padding so both buttons fit a
+   340px phone, and let the row stack only if a device is narrower still.
+   (Words must not break mid-glyph, so no overflow-wrap here.) */
+.speech-bar .btn { flex: 1 1 0; min-width: 0; padding: 12px 10px; }
 .btn-speak {
   flex: 1; background: var(--emerald-deep); color: var(--emerald-ink);
   border-color: var(--emerald-deep);
