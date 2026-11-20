@@ -247,7 +247,14 @@ the engine catches "Telma-H + a separate HCTZ tablet".
 cd tests/js && npm install && npm test   # 15 EXIF-scrub checks
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
+cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
 ```
+
+The preset suite is the integration one: it POSTs the three demo scenarios to the
+running app, then clicks each `data-demo` button in jsdom and asserts the card
+colour, the Malayalam/Hindi copy and the exact string handed to Web Speech. Start
+the server first (`./scripts/serve.sh`); point it elsewhere with
+`KATHA_BASE_URL=http://127.0.0.1:8000 node presets.test.mjs`.
 
 Measured results from this build:
 
@@ -258,6 +265,7 @@ Measured results from this build:
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
 | Retry path, executed in a DOM (jsdom) | **4/4 checks passed** — fails 3/4 if the Pass 4 defect is reintroduced |
+| Live demo presets, real API + real DOM | **9/9 checks passed** — Telma pair, Dolo+Crocin and Amaryl each render the expected card (32 ms on the cold first call, then 7 ms and 4 ms), and the speech handoff carries the same Malayalam string the API returned |
 
 ## Demo presets
 
