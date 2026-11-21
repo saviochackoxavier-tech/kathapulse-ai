@@ -77,6 +77,12 @@ async def index() -> FileResponse:
     return FileResponse(f"{STATIC_DIR}/index.html")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> FileResponse:
+    """Browsers probe /favicon.ico even with a declared icon; answer it."""
+    return FileResponse(f"{STATIC_DIR}/favicon.svg", media_type="image/svg+xml")
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     engines = extraction.active_engines()

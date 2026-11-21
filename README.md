@@ -145,8 +145,9 @@ the image or the repository.
 | `KATHA_OCR_DISABLED` | optional | `1` disables local tesseract |
 
 Verified on this build: with the exact `uvicorn` command from the `Procfile` and
-`PORT=3011`, `GET /` → 200, `/static/css/styles.css` and all four JS assets →
-200, `/health` → 200 with `Cache-Control: no-store`, and a real
+`PORT=3011`, `GET /` → 200, `/static/css/styles.css`, all four JS assets and
+`/static/favicon.svg` → 200, `/favicon.ico` → 200 (browsers probe it even with a
+declared icon), `/health` → 200 with `Cache-Control: no-store`, and a real
 `POST /verify-medicines` left `/tmp` free of any upload artifact. The **image
 itself was not built here** — this sandbox has no access to a Docker daemon —
 so the Dockerfile is reviewed and its startup command exercised directly, not
@@ -369,7 +370,7 @@ Error handling in `app.js`:
 | Linguistic clarity | **Pass (not native-reviewed)** | Malayalam and Hindi copy written for short-sentence, plain-register reading, with drug names transliterated as printed on the strip; speech runs at 0.85× and splits into <170-char chunks because Android truncates long utterances. A native speaker has **not** reviewed the copy — recommend one pass with a Malayalam-speaking pharmacist before pilot. |
 | LASA risk rendering | **Pass** | `LASA_RISK` findings render through the same high-contrast card as duplicate-salt warnings, anchored on the *printed label* (what the user sees on the foil), not the molecule name. |
 | Speech fallback (offline-resilient) | **Pass (logic verified, no audio heard)** | The warning script is always rendered on screen; if `speechSynthesis` is missing or has no `ml-IN`/`hi-IN` voice, the panel switches to an amber "read this" state instead of throwing. Chunking keeps utterances under 170 chars because Android truncates long ones. |
-| Preview accessibility | **Pass (local + Host-header verified)** | Supervised server on `0.0.0.0:3004`; `GET /` → 200 (7.9 KB) and all five `/static/*` assets → 200 (CSS 17 KB, four JS files 4.9–27.8 KB). Killing the worker process itself, the supervisor restarts it and the next request still returns 200. The public `*.style.dev` URL answers 403 to any request without the owner's session — that is the preview auth gate, not a refused connection. |
+| Preview accessibility | **Pass (local + Host-header verified)** | Supervised server on `0.0.0.0:3004`; `GET /` → 200 (8.1 KB), all six `/static/*` assets → 200 (CSS 17 KB, four JS files 4.9–27.8 KB, `favicon.svg` 295 B) and `/favicon.ico` → 200 (SVG, 295 B), so a live page load shows zero 404/403 requests in the browser console. Killing the worker process itself, the supervisor restarts it and the next request still returns 200. The public `*.style.dev` URL answers 403 to any request without the owner's session — that is the preview auth gate, not a refused connection. |
 | LASA detection accuracy | **Pass** | `Amaryl`+`Amlopres` → spoken-collision alert; `Telma 40`+`Telma-H` → LASA **and** duplicate salt; `Zerodol`+`Zerodol-SP`, `Pan 40`+`Pan-D` likewise; `Loprin`+`Loprin-LS` → verification wording, no composition claim. Every alert carries full Malayalam and Hindi copy. |
 | Regression safety | **Pass** | 87 pytest, 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 5/5 ad-hoc DOM checks of the preset/manual wiring. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
 | RAM ephemerality | **Pass** | AST test still walks `main.py` and `extraction.py` for `tempfile`/`open()`/`shutil`; vision bytes go out as a base64 data URL, OCR decodes from `io.BytesIO`. |
