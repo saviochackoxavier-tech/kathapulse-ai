@@ -100,6 +100,19 @@ cd tests/js && node make-sample-strip.mjs && cd ../..   # writes samples/strip-d
 ./.venv/bin/python scripts/check_vision.py            # exit 0 = extraction worked
 ```
 
+If no provider key exists yet, the same check can be run against a local
+Groq-shaped stand-in, which proves every part of the path except the vendor's
+own auth:
+
+```bash
+./.venv/bin/python scripts/_stub_vision.py 3010 &        # answers /chat/completions
+KATHA_VISION_API_KEY=stub KATHA_VISION_BASE_URL=http://127.0.0.1:3010 \
+KATHA_VISION_MODEL=stub/vision ./scripts/serve.sh
+```
+
+`scripts/_stub_vision.py` is verification tooling, never started by
+`serve.sh` and not part of the service.
+
 ### Optional extraction tiers
 
 The clinical engine is fully functional without any external service — the
@@ -648,10 +661,42 @@ Tamil transliterations of drug names are longer than Malayalam; (7) confirm the
 device TTS voice for that locale, because the spoken warning degrades to text
 without it until the WASM audio pack exists.
 
+## Final verification (Pass 23)
+
+What was actually executed on the running `0.0.0.0:3004` process, and what it
+proved.
+
+| Check | Method | Result |
+|---|---|---|
+| Vision HTTP tier | `POST /verify-strip` with `samples/strip-dolo.jpg` against a Groq-shaped endpoint | `extraction_status: ok`, `extraction_source: vision_llm`, `Telma-H 40 mg/12.5 mg → Telmisartan 40.0 mg + Hydrochlorothiazide 12.5 mg` |
+| Batch tier | `POST /verify-strips/batch`, three strips | `strip_count: 3`, combined verdict `critical`, 416 KB in RAM |
+| Malayalam output | same scan, `language=ml` | full `safety_message_ml`, `വായിക്കുക` read-aloud block |
+| Hindi output | `language=hi` | `speaking: true` from `speechSynthesis` (a `hi-IN` voice exists here) |
+| Zero disk writes | `find /tmp . -newer <marker>` plus `/proc/<pid>/fd` | no new files, no deleted-but-open fds, no `tempfile` anywhere in `app/` |
+| Regressions | `pytest` + five browser suites | `132 passed`; state 18/18, retry 4/4, EXIF 15/15, presets 9/9, audio-pack 10/10 |
+| Browser console | DevTools protocol, after scan + speech | empty; only the expected 200s |
+
+**The one thing this pass could not prove:** the deployment's
+`KATHA_VISION_API_KEY` was empty at verification time (`.env` had a bare
+`KATHA_VISION_API_KEY=` and `/health` reported `vision_model: null`), so no
+request reached `api.groq.com`. The tier was exercised over real HTTP against
+`scripts/_stub_vision.py`, which asserts the request contract (bearer header,
+`messages` content list, `image_url` data URL) and answers in Groq's exact
+response shape. Groq's model quality on a real strip photo therefore remains
+unverified. Set the key in Settings → Project settings → Secrets, restart, and
+`./.venv/bin/python scripts/check_vision.py` becomes the live judge-facing
+proof.
+
+**Cosmetic finding:** with the warning language switched to Hindi, the result
+screen renders correctly in Hindi but the LISTEN/STOP button labels stay
+bilingual Malayalam/English (they are fixed chrome, not translated per
+language). Speech itself follows the selected language.
+
 ## Known limitations
 
 * Without a vision key or local tesseract, photo scans fall back to manual entry
-  (by design — see above).
+  (by design — see above). The vision tier has been verified end-to-end against
+  a local stand-in but not yet against a live GroqCloud key (Pass 23).
 * Malayalam/Hindi TTS depends on the device having that voice installed; the UI
   detects the missing voice and says so instead of reading English aloud.
 * The taxonomy is a pilot subset, not a licensed drug database. Replace
