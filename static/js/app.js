@@ -385,8 +385,17 @@
    */
   async function tryAudioPack(payload) {
     const pack = typeof window !== "undefined" ? window.AudioPack : null;
-    if (!pack || typeof pack.status !== "function" || pack.status().clips === 0) {
+    if (!pack || typeof pack.playScript !== "function") {
       return false;
+    }
+    // Only an *loaded* empty pack is worth skipping: gating on "clips === 0"
+    // before the manifest lands made tier 0 unreachable on a cold page, because
+    // nothing had loaded it yet. playScript loads lazily regardless.
+    if (typeof pack.status === "function") {
+      const packStatus = pack.status();
+      if (packStatus.loaded && packStatus.clips === 0) {
+        return false;
+      }
     }
     try {
       const result = await pack.playScript(language, packCodes(payload));
@@ -405,12 +414,16 @@
 
     resetSpeechWarning();
 
-    // A recorded/synthesised clip outranks a synthesised device voice.
+    // A recorded/synthesised clip outranks a synthesised device voice. The
+    // script can run for half a minute, so STOP is offered while it plays.
+    els.stopBtn.hidden = false;
     if (await tryAudioPack(lastPayload)) {
+      els.stopBtn.hidden = true;
       dispatch("SPEECH_START");
       dispatch("SPEECH_END");
       return;
     }
+    els.stopBtn.hidden = true;
 
     if (!Speech || !Speech.isSupported()) {
       dispatch("SPEECH_START");
@@ -739,6 +752,13 @@
   window.addEventListener("online", () => {
     if (state.name !== "error") setStatus("", null);
   });
+
+  // Warm the shipped clip manifest so the first warning of the session is not
+  // forced onto the device voice while the pack is still unloaded. Best-effort:
+  // an empty or missing pack simply leaves the fallback chain untouched.
+  if (window.AudioPack && typeof window.AudioPack.load === "function") {
+    window.AudioPack.load().catch(() => undefined);
+  }
 
   // Offline shell (roadmap item 6): cache the UI + taxonomy so a pharmacy with
   // one bar of signal still gets an instant paint. Best-effort: a browser that

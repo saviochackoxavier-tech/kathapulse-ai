@@ -263,6 +263,7 @@ cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / re
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
 cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
 cd tests/js && node audio-pack.test.mjs  # 10 audio-pack loader, script and fallback checks (no jsdom, no network)
+cd tests/js && node audiopack.test.mjs   # 14 DOM-level checks: app.js drives playScript, or falls back to speech
 # Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
 # POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
 ```
@@ -282,6 +283,7 @@ Measured results from this build:
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
 | Retry path, executed in a DOM (jsdom) | **4/4 checks passed** — fails 3/4 if the Pass 4 defect is reintroduced |
+| Audio pack wiring, real DOM (Pass 24) | **14/14 checks passed** — clips present → `playScript` runs intro/findings/outro and the device voice stays silent; clips missing → nothing half-plays and the device voice takes over |
 | Live demo presets, real API + real DOM | **9/9 checks passed** — Telma pair, Dolo+Crocin and Amaryl each render the expected card (32 ms on the cold first call, then 7 ms and 4 ms), and the speech handoff carries the same Malayalam string the API returned |
 
 ## Demo presets
@@ -660,6 +662,23 @@ keys in `app/i18n.py`; (5) add the script's font to the stack in `styles.css`
 Tamil transliterations of drug names are longer than Malayalam; (7) confirm the
 device TTS voice for that locale, because the spoken warning degrades to text
 without it until the WASM audio pack exists.
+
+### Audio tier wiring (Pass 24)
+
+`tests/js/audiopack.test.mjs` mounts the real page in jsdom and asserts what
+`app.js` does with the pack, with clips present and with clips missing. It found
+two defects that are now fixed:
+
+* **tier 0 was dead on a cold page.** `tryAudioPack()` skipped the pack while
+  `status().clips` was still 0, and nothing had ever loaded the manifest, so
+  shipped clips could never play. The manifest is now warmed at boot and only an
+  *already-loaded empty* pack is skipped.
+* **no STOP during clip playback.** The pack branch returned before showing the
+  STOP button, so a long warning could not be interrupted. STOP is now offered
+  for the duration of a clip script.
+
+Cache name bumped to `kathapulse-v4` so phones pick up the new `app.js`; the
+service-worker test now pins a version floor instead of a literal number.
 
 ## Final verification (Pass 23)
 

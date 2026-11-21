@@ -42,7 +42,11 @@ def test_clip_paths_are_relative_and_local():
 
 def test_service_worker_precaches_the_pack_and_bumps_its_version():
     body = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_VERSION = "kathapulse-v3"' in body
+    # Any version from v3 on carries the pack; the exact number churns per
+    # release, so pin the floor instead of a literal (Pass 24 is v4).
+    match = re.search(r'CACHE_VERSION = "kathapulse-v(\d+)"', body)
+    assert match, "sw.js has no versioned cache name"
+    assert int(match.group(1)) >= 3
     assert "/static/js/audio-pack.js" in body
     assert "/static/audio/manifest.json" in body
 
