@@ -27,8 +27,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = join(HERE, "../../static");
 const read = (p) => readFileSync(join(STATIC_DIR, p), "utf8");
 
-/** A real payload captured from POST /verify-medicines (Telma 40 + Telma-H). */
+/** Real payloads captured from POST /verify-medicines (Telma 40 + Telma-H).
+ *  `duplasa.json` was scanned in Malayalam, `duplasa-en.json` in English; both
+ *  carry all three flat speech scripts, which is what the language switch uses.
+ */
 const FIXTURE = JSON.parse(readFileSync(join(HERE, "fixtures/duplasa.json"), "utf8"));
+const FIXTURE_EN = JSON.parse(readFileSync(join(HERE, "fixtures/duplasa-en.json"), "utf8"));
 const CODES = ["DUPLICATE_SALT", "LASA_RISK"];
 const MANIFEST_URL = "/static/audio/manifest.json";
 
@@ -72,6 +76,7 @@ function manifestWith(clips, version = "4") {
  */
 function boot({
   manifest = manifestWith({}),
+  payload = FIXTURE,
   fetchFails = false,
   holdAudio = false, // clips never report `ended`: keeps a script "playing"
   speech = { supported: true, voices: true },
@@ -103,7 +108,7 @@ function boot({
       return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(manifest)) };
     }
     if (target.includes("/verify-medicines")) {
-      return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(FIXTURE)) };
+      return { ok: true, status: 200, json: async () => JSON.parse(JSON.stringify(payload)) };
     }
     return { ok: false, status: 404, json: async () => ({}) };
   };
@@ -319,6 +324,51 @@ await test("no pack, no speech support: the written warning is promoted", async 
   assert.equal(env.doc.getElementById("spoken-panel").hidden, false, "on-screen script hidden");
   assert.ok(env.doc.getElementById("spoken-script").textContent.length > 80);
   assert.equal(env.doc.getElementById("stop-speak").hidden, true);
+});
+
+await test("empty manifest + English: the device voice reads the English script", async () => {
+  const env = boot({ manifest: manifestWith({}), payload: FIXTURE_EN });
+  const select = env.doc.getElementById("language");
+  select.value = "en";
+  select.dispatchEvent(new env.win.Event("change", { bubbles: true }));
+  await scan(env);
+  assert.equal(env.played.length, 0);
+  assert.equal(env.spoken.length, 1, `device voice called ${env.spoken.length} times`);
+  assert.equal(env.spoken[0].lang, "en", "English scan did not speak English");
+  assert.equal(env.spoken[0].text, FIXTURE_EN.safety_message_en, "did not speak the API's English script");
+  assert.match(env.spoken[0].text, /KathaPulse warning/);
+  assert.doesNotMatch(env.spoken[0].text, MALAYALAM, "English speech contained Malayalam");
+});
+
+await test("empty manifest + Hindi: the device voice reads the Hindi script", async () => {
+  const env = boot({ manifest: manifestWith({}) });
+  const select = env.doc.getElementById("language");
+  select.value = "hi";
+  select.dispatchEvent(new env.win.Event("change", { bubbles: true }));
+  await scan(env);
+  assert.equal(env.played.length, 0);
+  assert.equal(env.spoken.length, 1);
+  assert.equal(env.spoken[0].lang, "hi");
+  assert.match(env.spoken[0].text, DEVANAGARI);
+  assert.equal(env.spoken[0].text, FIXTURE.safety_message_hi);
+});
+
+await test("switching a Malayalam scan to English speaks English, not the scan-time script", async () => {
+  // Before `safety_message_en` existed, this path read the Malayalam `speech.text`
+  // back with an English voice.
+  const env = boot({ manifest: manifestWith({}) });
+  await scan(env);
+  assert.equal(env.spoken[0].lang, "ml");
+
+  const select = env.doc.getElementById("language");
+  select.value = "en";
+  select.dispatchEvent(new env.win.Event("change", { bubbles: true }));
+  await flush();
+
+  assert.equal(env.spoken.length, 2, `expected a second utterance, got ${env.spoken.length}`);
+  assert.equal(env.spoken[1].lang, "en");
+  assert.equal(env.spoken[1].text, FIXTURE.safety_message_en);
+  assert.doesNotMatch(env.spoken[1].text, MALAYALAM, "English switch re-read the Malayalam script");
 });
 
 await test("no Malayalam voice installed: text fallback, not English audio", async () => {

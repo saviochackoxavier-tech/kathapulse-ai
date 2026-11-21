@@ -218,9 +218,12 @@ class VerifyResponse(BaseModel):
     # -- flat fields for the client contract ------------------------------
     # The full tri-lingual findings stay the source of truth; these mirror the
     # speech script so a client can hand `safety_message_ml` / `safety_message_hi`
-    # straight to SpeechSynthesis without walking the findings tree.
+    # straight to SpeechSynthesis without walking the findings tree. English is
+    # mirrored too, so switching language after a scan never speaks the script
+    # of the language the scan was taken in.
     safety_message_ml: str = ""
     safety_message_hi: str = ""
+    safety_message_en: str = ""
     duplicate_salt_warning: bool = False
     lasa_risk: bool = False
 
@@ -252,6 +255,7 @@ class BatchVerifyResponse(BaseModel):
     # -- flat fields mirroring the combined speech script -----------------
     safety_message_ml: str = ""
     safety_message_hi: str = ""
+    safety_message_en: str = ""
     duplicate_salt_warning: bool = False
     lasa_risk: bool = False
 

@@ -156,9 +156,12 @@ def test_flat_client_contract_fields_are_populated():
     body = response.json()
     assert body["duplicate_salt_warning"] is True
     assert body["lasa_risk"] is False
-    # Both language strings are present regardless of the requested language.
+    # All three language strings are present regardless of the requested
+    # language, so a client can switch language without re-scanning.
     assert "പാരസെറ്റമോൾ" in body["safety_message_ml"]
     assert "पैरासिटामोल" in body["safety_message_hi"]
+    assert "Paracetamol" in body["safety_message_en"]
+    assert not any("\u0d00" <= ch <= "\u0d7f" for ch in body["safety_message_en"])
 
 
 def test_lasa_flag_is_true_for_look_alike_family():

@@ -209,6 +209,9 @@ def _flatten_flags(safety) -> dict:
         "safety_message_hi": clinical.build_speech(
             safety.findings, Language.hindi
         ).text,
+        "safety_message_en": clinical.build_speech(
+            safety.findings, Language.english
+        ).text,
         "duplicate_salt_warning": "DUPLICATE_SALT" in codes,
         "lasa_risk": "LASA_RISK" in codes,
     }

@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 21 November 2026
-**Build audited:** `v1.1.6` (from `v1.1.5`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.1.7` (Pass 24: `v1.1.6`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -11,8 +11,8 @@ permanent DOM-level integration test for the local audio pack.
 
 | Area | Result |
 |---|---|
-| New DOM audio test `tests/js/audiopack.test.mjs` | **14/14 checks pass** |
-| Defects found by that test and fixed | **2** (dead tier 0 on cold start; no STOP during clip playback) |
+| DOM audio test `tests/js/audiopack.test.mjs` | **17/17 checks pass** |
+| Defects found by that test and fixed | **3** (dead tier 0 on cold start; no STOP during clip playback; English read the Malayalam script after a language switch) |
 | Backend suite | **132 passed** |
 | Frontend suites (6 files) | **70 checks passed** |
 | Disk writes attributable to any request path | **0** |
@@ -52,6 +52,9 @@ and `app.js` is what decides whether to call it.
 | 12 | no Malayalam voice → text fallback, never English audio | no wrong-language speech |
 | 13 | offline manifest fetch → device voice | offline behaviour |
 | 14 | warm-up + scan raise nothing unhandled | no error leaks |
+| 15 | empty manifest + **English** scan → English script spoken, no Malayalam | en fallback |
+| 16 | empty manifest + **Hindi** scan → Devanagari script spoken | hi fallback |
+| 17 | Malayalam scan switched to English → English script, not the scan-time one | `safety_message_en` |
 
 ### Defects the test found (both fixed)
 
@@ -66,8 +69,16 @@ and `app.js` is what decides whether to call it.
    an accessibility regression against the elderly-use requirement.
    *Fix:* offer STOP for the duration of a clip script and hide it afterwards.
 
-Both are now pinned by the test (checks 1 and 5), which fails 5/14 against the
-pre-fix code and 14/14 after it.
+Both are pinned by the test (checks 1 and 5), which fails 5/14 against the
+pre-fix code and passes after it.
+
+3. **English re-read the Malayalam script** (found by extending the test to all
+   three languages). `spokenTextFor()` fell through to `safety.speech.text` for
+   English, and that field carries whatever language the scan was taken in — so
+   scanning in Malayalam and switching to English spoke Malayalam text through an
+   English voice. The API now returns `safety_message_en` alongside
+   `_ml`/`_hi` (`app/main.py::_flatten_flags`, both response schemas), and the
+   client prefers it for `en`. Check 17 pins it.
 
 Supporting change: `static/sw.js` cache bumped `kathapulse-v3` → `v4` so phones
 pick up the patched `app.js`. `tests/test_audio_pack.py` now asserts a version
@@ -196,8 +207,8 @@ audio pack exists to close.
 | EXIF scrub | `node exif-scrub.test.mjs` | 15/15 |
 | Live presets | `node presets.test.mjs` | 9/9 |
 | Audio pack unit | `node audio-pack.test.mjs` | 10/10 |
-| **Audio pack DOM (new)** | `node audiopack.test.mjs` | **14/14** |
-| **Total** | | **132 backend + 70 frontend** |
+| **Audio pack DOM** | `node audiopack.test.mjs` | **17/17** |
+| **Total** | | **132 backend + 73 frontend** |
 
 ---
 
@@ -221,9 +232,9 @@ audio pack exists to close.
 | Criterion | Verdict |
 |---|---|
 | DOM audio test passes 100%, proving `playScript` invocation **and** speech fallback | **Pass** — 14/14, and it caught two real defects |
-| Full test suite green (backend + frontend, 0 errors) | **Pass** — 132 + 70 |
+| Full test suite green (backend + frontend, 0 errors) | **Pass** — 132 + 73 |
 | RAM ephemerality across all request paths | **Pass** — 0 files, 0 deleted fds |
-| Bilingual consistency (en/ml/hi error states + speech triggers) | **Pass** — 12/12 layout combinations, correct scripts |
+| Bilingual consistency (en/ml/hi error states + speech triggers) | **Pass** — 12/12 layout combinations, correct scripts, and a language switch now speaks the selected language |
 | `AUDIT_REPORT.md` generated and accurate | **Pass** |
 
 **Overall: 9/10.** Points withheld for the two things this environment cannot

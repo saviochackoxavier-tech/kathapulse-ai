@@ -18,7 +18,7 @@
  * any asset change so the old copy is dropped on activate.
  */
 
-const CACHE_VERSION = "kathapulse-v4";
+const CACHE_VERSION = "kathapulse-v5";
 const SHELL_URL = "/";
 const PRECACHE = [
   SHELL_URL,

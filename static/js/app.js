@@ -352,6 +352,9 @@
     if (!payload) return "";
     if (language === "ml" && payload.safety_message_ml) return payload.safety_message_ml;
     if (language === "hi" && payload.safety_message_hi) return payload.safety_message_hi;
+    // English has its own flat script: falling back to `speech.text` here would
+    // read the language the scan was taken in, even after an ml -> en switch.
+    if (language === "en" && payload.safety_message_en) return payload.safety_message_en;
     if (payload.safety && payload.safety.speech) return payload.safety.speech.text || "";
     return "";
   }
