@@ -177,6 +177,72 @@
     });
   }
 
+  /**
+   * Play one clip and wait for it to finish before resolving, so a script of
+   * several clips is a script and not a pile-up. Resolves the same statuses as
+   * play(), plus "timeout"/"failed" if the element never reports an end.
+   */
+  function playToEnd(lang, code, options) {
+    return play(lang, code, options).then(function (result) {
+      if (result.status !== "played") return result;
+      const audio = current && current.audio;
+      if (!audio || typeof audio.addEventListener !== "function") return result;
+      return new Promise(function (resolve) {
+        let settled = false;
+        const finish = function (status) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve({ status: status, clip: result.clip });
+        };
+        // A clip that never fires `ended` must not hang the warning path.
+        const timer = setTimeout(function () {
+          finish("timeout");
+        }, 15000);
+        audio.addEventListener("ended", function () {
+          finish("played");
+        });
+        audio.addEventListener("error", function () {
+          finish("failed");
+        });
+      });
+    });
+  }
+
+  /**
+   * Play intro → one clip per finding code → outro.
+   *
+   * All-or-nothing: if any clip is missing, nothing is played and the caller
+   * keeps its device-voice fallback. A half-spoken warning (intro then silence)
+   * is worse than a synthetic one that reads the whole thing.
+   */
+  async function playScript(lang, codes, options) {
+    const sequence = ["intro"].concat(codes || [], ["outro"]);
+    const available = await Promise.all(
+      sequence.map(function (keyOrCode) {
+        return canPlay(lang, keyOrCode);
+      })
+    );
+    const missing = sequence.filter(function (_, index) {
+      return !available[index];
+    });
+    if (missing.length) {
+      return { status: "unavailable", missing: missing, played: 0 };
+    }
+    for (let index = 0; index < sequence.length; index += 1) {
+      const result = await playToEnd(lang, sequence[index], options);
+      if (result.status !== "played") {
+        return {
+          status: result.status,
+          clip: result.clip || null,
+          played: index,
+          reason: result.reason || null,
+        };
+      }
+    }
+    return { status: "played", played: sequence.length };
+  }
+
   function status() {
     return {
       loaded: manifest !== null,
@@ -191,6 +257,8 @@
     load: load,
     canPlay: canPlay,
     play: play,
+    playToEnd: playToEnd,
+    playScript: playScript,
     stop: stop,
     status: status,
     key: key,

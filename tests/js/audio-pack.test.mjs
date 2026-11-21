@@ -103,6 +103,53 @@ await test("autoplay rejection is reported as 'blocked', not an exception", asyn
   assert.match(result.reason, /NotAllowedError/);
 });
 
+await test("playScript plays intro, each finding code, then outro in order", async () => {
+  const clips = {
+    "ml:intro": "/static/audio/ml/intro.webm",
+    "ml:DUPLICATE_SALT": CLIP,
+    "ml:intro_end": "/static/audio/ml/never.webm",
+    "ml:outro": "/static/audio/ml/outro.webm",
+  };
+  const { pack, played } = makePack({ manifest: { schema: 1, version: "3", clips } });
+  const result = await pack.playScript("ml", ["DUPLICATE_SALT"]);
+  assert.equal(result.status, "played");
+  assert.equal(result.played, 3);
+  assert.deepEqual(played, [
+    "/static/audio/ml/intro.webm",
+    CLIP,
+    "/static/audio/ml/outro.webm",
+  ]);
+});
+
+await test("playScript refuses to start when any clip is missing", async () => {
+  // Intro and the finding exist, the outro does not: playing the first two
+  // would leave the user with half a warning, so nothing should play.
+  const { pack, played } = makePack({
+    manifest: {
+      schema: 1,
+      version: "3",
+      clips: { "ml:intro": "/static/audio/ml/intro.webm", "ml:DUPLICATE_SALT": CLIP },
+    },
+  });
+  const result = await pack.playScript("ml", ["DUPLICATE_SALT"]);
+  assert.equal(result.status, "unavailable");
+  assert.deepEqual(result.missing, ["outro"]);
+  assert.deepEqual(played, []);
+});
+
+await test("playScript without finding codes still frames the warning", async () => {
+  const { pack, played } = makePack({
+    manifest: {
+      schema: 1,
+      version: "3",
+      clips: { "ml:intro": "/static/audio/ml/intro.webm", "ml:outro": "/static/audio/ml/outro.webm" },
+    },
+  });
+  const result = await pack.playScript("ml", []);
+  assert.equal(result.status, "played");
+  assert.deepEqual(played, ["/static/audio/ml/intro.webm", "/static/audio/ml/outro.webm"]);
+});
+
 await test("path traversal in a manifest value is dropped", async () => {
   const { pack } = makePack({
     manifest: { schema: 1, version: "9", clips: { "ml:BAD": "../../secret.webm", "ml:OK": CLIP } },

@@ -42,7 +42,7 @@ def test_clip_paths_are_relative_and_local():
 
 def test_service_worker_precaches_the_pack_and_bumps_its_version():
     body = (ROOT / "static" / "sw.js").read_text(encoding="utf-8")
-    assert 'CACHE_VERSION = "kathapulse-v2"' in body
+    assert 'CACHE_VERSION = "kathapulse-v3"' in body
     assert "/static/js/audio-pack.js" in body
     assert "/static/audio/manifest.json" in body
 
@@ -58,7 +58,7 @@ def test_page_loads_the_pack_before_the_app():
 def test_the_module_exposes_only_the_pack_api():
     body = (ROOT / "static" / "js" / "audio-pack.js").read_text(encoding="utf-8")
     assert "global.AudioPack" in body
-    for method in ("load", "canPlay", "play", "stop", "status"):
+    for method in ("load", "canPlay", "play", "playScript", "stop", "status"):
         assert re.search(rf"\b{method}:", body), method
     # No eval, no remote origin, no service worker writes of patient data.
     assert "eval(" not in body

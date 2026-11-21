@@ -372,6 +372,30 @@
     els.stopBtn.hidden = true;
   }
 
+  /** Finding codes the audio pack needs, worst first, capped for a short clip. */
+  function packCodes(payload) {
+    const findings = (payload && payload.safety && payload.safety.findings) || [];
+    return findings.slice(0, 4).map((finding) => finding.code).filter(Boolean);
+  }
+
+  /**
+   * Tier 0: shipped clips, tried only when the pack actually has some.
+   * Returns true when the whole script played; false (immediately) otherwise,
+   * so the unchanged device-voice path runs exactly as before.
+   */
+  async function tryAudioPack(payload) {
+    const pack = typeof window !== "undefined" ? window.AudioPack : null;
+    if (!pack || typeof pack.status !== "function" || pack.status().clips === 0) {
+      return false;
+    }
+    try {
+      const result = await pack.playScript(language, packCodes(payload));
+      return !!result && result.status === "played";
+    } catch (err) {
+      return false; // a broken pack must never silence the warning
+    }
+  }
+
   async function speakCurrent() {
     const script = spokenTextFor(lastPayload);
     if (!script) {
@@ -380,6 +404,13 @@
     }
 
     resetSpeechWarning();
+
+    // A recorded/synthesised clip outranks a synthesised device voice.
+    if (await tryAudioPack(lastPayload)) {
+      dispatch("SPEECH_START");
+      dispatch("SPEECH_END");
+      return;
+    }
 
     if (!Speech || !Speech.isSupported()) {
       dispatch("SPEECH_START");
@@ -668,6 +699,7 @@
   els.speakBtn.addEventListener("click", speakCurrent);
 
   els.stopBtn.addEventListener("click", () => {
+    if (window.AudioPack) window.AudioPack.stop();
     Speech.stop();
     els.stopBtn.hidden = true;
     dispatch("SPEECH_END");
