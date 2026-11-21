@@ -244,11 +244,12 @@ the engine catches "Telma-H + a separate HCTZ tablet".
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 127 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay/hardening/ratelimit tests
+./.venv/bin/pytest                 # 132 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay/hardening/ratelimit/audio tests
 cd tests/js && npm install && npm test   # 15 EXIF-scrub checks
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
 cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
+cd tests/js && node audio-pack.test.mjs  # 7 audio-pack loader/fallback checks (no jsdom, no network)
 # Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
 # POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
 ```
@@ -263,7 +264,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **127 passed** |
+| Backend suite | **132 passed** |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
@@ -374,7 +375,7 @@ Error handling in `app.js`:
 | Speech fallback (offline-resilient) | **Pass (logic verified, no audio heard)** | The warning script is always rendered on screen; if `speechSynthesis` is missing or has no `ml-IN`/`hi-IN` voice, the panel switches to an amber "read this" state instead of throwing. Chunking keeps utterances under 170 chars because Android truncates long ones. |
 | Preview accessibility | **Pass (local + Host-header verified)** | Supervised server on `0.0.0.0:3004`; `GET /` → 200 (8.1 KB), all six `/static/*` assets → 200 (CSS 17 KB, four JS files 4.9–27.8 KB, `favicon.svg` 295 B) and `/favicon.ico` → 200 (SVG, 295 B), so a live page load shows zero 404/403 requests in the browser console. Killing the worker process itself, the supervisor restarts it and the next request still returns 200. The public `*.style.dev` URL answers 403 to any request without the owner's session — that is the preview auth gate, not a refused connection. |
 | LASA detection accuracy | **Pass** | `Amaryl`+`Amlopres` → spoken-collision alert; `Telma 40`+`Telma-H` → LASA **and** duplicate salt; `Zerodol`+`Zerodol-SP`, `Pan 40`+`Pan-D` likewise; `Loprin`+`Loprin-LS` → verification wording, no composition claim. Every alert carries full Malayalam and Hindi copy. |
-| Regression safety | **Pass** | 127 pytest (87 original + 14 next-gen + 16 hardening + 10 rate-limit), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
+| Regression safety | **Pass** | 132 pytest (87 original + 14 next-gen + 16 hardening + 10 rate-limit + 5 audio pack), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, 7/7 audio pack (JS) and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
 | RAM ephemerality | **Pass** | AST test still walks `main.py` and `extraction.py` for `tempfile`/`open()`/`shutil`; vision bytes go out as a base64 data URL, OCR decodes from `io.BytesIO`. |
 | End-to-end flow | **Pass (logic verified)** | `tests/test_e2e.py` drives a real multipart POST through validation → extraction → rules → JSON with cards, speech script and flags. The camera→canvas→fetch→speech chain is covered by the EXIF suite + state-machine suite + live server calls; a human still has to tap it on a phone, which I could not do here. |
 | Error resilience | **Pass** | Timeout, offline, 413/415/422/5xx, camera denial, unreadable image and missing speech API all land on   a localised card or the amber read-aloud fallback. 18/18 state checks, including "FATAL from every state". |
@@ -480,9 +481,9 @@ The plan is to ship the warning audio itself:
    read-aloud feature unreliable on the cheapest Android phones, and it is the
    only way to guarantee the critical warning can be heard in a noisy shop.
 
-Not implemented in this build: no clips, no manifest, no playback code. It is
-listed here so the delivery shape and the licensing/clinical-review requirement
-are agreed before anyone records voice talent.
+Still not recorded: no voice talent, no clips, no synthesiser model. The loader,
+manifest contract and playback tier now ship (see "Local audio pack" below), so
+the remaining work is content and clinical review, not plumbing.
 
 ### New tests (14, in `tests/test_nextgen.py`)
 
@@ -564,6 +565,49 @@ KATHA_RATE_LIMIT_PER_MIN=30 ./scripts/serve.sh
 
 It is deliberately not a log: counters are timestamps per IP, discarded with the
 process, which keeps the zero-persistence posture of the scan path intact.
+
+### Local audio pack (Pass 21)
+
+`static/js/audio-pack.js` + `static/audio/manifest.json` are the tier above the
+Web Speech API, for the phones that have no `ml-IN` / `hi-IN` voice at all.
+
+The manifest ships **empty** (`"clips": {}`), and that is the point: `play()`
+answers `unavailable`, the caller falls through to the device voice, and then to
+the written warning. Speech behaviour today is byte-for-byte unchanged.
+
+```json
+{"schema": 1, "version": "3", "voice": {"name": "...", "license": "..."},
+ "clips": {"ml:DUPLICATE_SALT": "/static/audio/ml/DUPLICATE_SALT.webm"}}
+```
+
+Keys are `<language>:<finding.code>`, plus `<language>:intro` and
+`<language>:outro` for the speech frame. Every API call resolves a status
+instead of throwing, so the warning path can never die on audio:
+
+| Status | Meaning | Caller does |
+|---|---|---|
+| `played` | clip started | stop; audio is the channel |
+| `unavailable` | no clip for this key, or the pack failed to load | use `Speech.speak()` |
+| `blocked` | autoplay policy rejected it (no user gesture yet) | use `Speech.speak()` |
+| `unsupported` | no `Audio` constructor | use `Speech.speak()` |
+
+Manifest values are cleaned before use: anything that is not a non-empty string
+without `..` is dropped, so a tampered manifest cannot point at another origin.
+The service worker precaches the loader and the manifest as part of the
+`kathapulse-v2` shell.
+
+**WASM synthesiser (still a plan).** The clips can be recorded by a human, or
+synthesised on-device by a WASM TTS engine (Piper or sherpa-onnx with a
+Malayalam/Hindi voice bundle, roughly 20–60 MB, cached after first use). WASM is
+the optional third route, not the default: recorded clips win on quality and
+size for 30 fixed phrases, and a 40 MB model download is a real cost on a ₹8k
+phone. The integration point is already correct — a synthesiser only has to fill
+the manifest.
+
+To go live: record/synthesise the 31 finding clips per language, get clinical
+sign-off on the wording, drop the `.webm` files under `static/audio/<lang>/`,
+list them in the manifest, bump `version`, call `AudioPack.play(lang, code)`
+before `Speech.speak()` in `speakCurrent`, and bump `CACHE_VERSION`.
 
 ### Multilingual architecture
 
