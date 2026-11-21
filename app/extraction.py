@@ -326,14 +326,14 @@ async def extract(image_bytes: bytes, content_type: str) -> Extraction:
 
 
 async def extract_batch(
-    payloads: list[tuple[bytes, str]], concurrency: int = 2
+    payloads: list[tuple[bytes, str]], concurrency: int = 3
 ) -> list[Extraction]:
     """Read several strips for one basket, still entirely in RAM.
 
     Each payload is the same ``(bytes, content_type)`` pair :func:`extract`
     takes; the image bytes are already validated and bounded by the caller.
-    Concurrency is capped so a four-strip basket cannot spin up four vision
-    calls at once on a cheap phone's shared connection.
+    Concurrency is capped at three so a five-strip basket cannot spin up five
+    vision calls at once on a cheap phone's shared connection.
     """
     gate = asyncio.Semaphore(max(1, concurrency))
 

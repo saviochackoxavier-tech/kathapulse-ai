@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import clinical, config, extraction, i18n, relay
+from . import clinical, config, extraction, i18n, ratelimit, relay
 from .schemas import (
     ALLOWED_IMAGE_TYPES,
     MAX_IMAGE_BYTES,
@@ -77,6 +77,31 @@ async def security_headers(request: Request, call_next):
         "script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
     )
     return response
+
+
+@app.middleware("http")
+async def rate_limit(request: Request, call_next):
+    """Optional sliding-window backstop (``KATHA_RATE_LIMIT_PER_MIN``).
+
+    Off by default: nginx and Cloudflare carry the 30 req/min budget in a normal
+    deployment. Switched on, it protects a bare container or a LAN install where
+    no proxy exists. It never logs the client and keeps only timestamps in RAM.
+    """
+    limit = ratelimit.limit_per_minute()
+    if limit:
+        client = request.client.host if request.client else "unknown"
+        allowed, retry_after = ratelimit.LIMITER.hit(client, limit)
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many requests. Please wait a moment and try again."},
+                headers={
+                    "Retry-After": str(retry_after),
+                    "Cache-Control": "no-store, max-age=0",
+                    "X-Content-Type-Options": "nosniff",
+                },
+            )
+    return await call_next(request)
 
 
 #: Schema routes a public deployment should not advertise.

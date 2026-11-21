@@ -80,11 +80,20 @@ def test_batch_scan_returns_each_strip_plus_a_combined_verdict():
     assert body["combined"]["speech"]["text"]
 
 
-def test_batch_rejects_more_than_four_strips():
+def test_batch_accepts_a_five_strip_basket():
     files = [("strips", (f"{i}.jpg", jpeg_bytes(), "image/jpeg")) for i in range(5)]
     response = client.post("/verify-strips/batch", files=files)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["strip_count"] == 5
+    assert [strip["strip_index"] for strip in body["strips"]] == [0, 1, 2, 3, 4]
+
+
+def test_batch_rejects_more_than_five_strips():
+    files = [("strips", (f"{i}.jpg", jpeg_bytes(), "image/jpeg")) for i in range(6)]
+    response = client.post("/verify-strips/batch", files=files)
     assert response.status_code == 413
-    assert "4" in response.json()["detail"]
+    assert "5" in response.json()["detail"]
 
 
 def test_batch_rejects_an_empty_basket():

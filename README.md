@@ -244,13 +244,13 @@ the engine catches "Telma-H + a separate HCTZ tablet".
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 116 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay/hardening tests
+./.venv/bin/pytest                 # 127 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay/hardening/ratelimit tests
 cd tests/js && npm install && npm test   # 15 EXIF-scrub checks
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
 cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
 # Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
-# POST /verify-strips/batch (1-4 strips) and the zero-retention /ws/relay handshake.
+# POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
 ```
 
 The preset suite is the integration one: it POSTs the three demo scenarios to the
@@ -263,7 +263,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **116 passed** |
+| Backend suite | **127 passed** |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
@@ -374,7 +374,7 @@ Error handling in `app.js`:
 | Speech fallback (offline-resilient) | **Pass (logic verified, no audio heard)** | The warning script is always rendered on screen; if `speechSynthesis` is missing or has no `ml-IN`/`hi-IN` voice, the panel switches to an amber "read this" state instead of throwing. Chunking keeps utterances under 170 chars because Android truncates long ones. |
 | Preview accessibility | **Pass (local + Host-header verified)** | Supervised server on `0.0.0.0:3004`; `GET /` → 200 (8.1 KB), all six `/static/*` assets → 200 (CSS 17 KB, four JS files 4.9–27.8 KB, `favicon.svg` 295 B) and `/favicon.ico` → 200 (SVG, 295 B), so a live page load shows zero 404/403 requests in the browser console. Killing the worker process itself, the supervisor restarts it and the next request still returns 200. The public `*.style.dev` URL answers 403 to any request without the owner's session — that is the preview auth gate, not a refused connection. |
 | LASA detection accuracy | **Pass** | `Amaryl`+`Amlopres` → spoken-collision alert; `Telma 40`+`Telma-H` → LASA **and** duplicate salt; `Zerodol`+`Zerodol-SP`, `Pan 40`+`Pan-D` likewise; `Loprin`+`Loprin-LS` → verification wording, no composition claim. Every alert carries full Malayalam and Hindi copy. |
-| Regression safety | **Pass** | 116 pytest (87 original + 13 next-gen + 16 hardening), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
+| Regression safety | **Pass** | 127 pytest (87 original + 14 next-gen + 16 hardening + 10 rate-limit), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
 | RAM ephemerality | **Pass** | AST test still walks `main.py` and `extraction.py` for `tempfile`/`open()`/`shutil`; vision bytes go out as a base64 data URL, OCR decodes from `io.BytesIO`. |
 | End-to-end flow | **Pass (logic verified)** | `tests/test_e2e.py` drives a real multipart POST through validation → extraction → rules → JSON with cards, speech script and flags. The camera→canvas→fetch→speech chain is covered by the EXIF suite + state-machine suite + live server calls; a human still has to tap it on a phone, which I could not do here. |
 | Error resilience | **Pass** | Timeout, offline, 413/415/422/5xx, camera denial, unreadable image and missing speech API all land on   a localised card or the amber read-aloud fallback. 18/18 state checks, including "FATAL from every state". |
@@ -404,7 +404,7 @@ after `load`, and failing registration is silent by design.
 | Request | Strategy | Why |
 |---|---|---|
 | Navigation (`/`) | network-first, cached shell fallback | a deploy shows up immediately on good signal, and the app still opens with no signal |
-| `/static/*`, `/taxonomy.json` | stale-while-revalidate | instant paint, fresh copy in the background for the next visit |
+| `/static/*`, `/taxonomy.json` | cache-first (stale-while-revalidate) | the cached copy answers immediately; a fresh copy lands in the background for the next visit. Cache-first without revalidation would pin a stale stylesheet forever, so the revalidate half is deliberate |
 | Any non-GET (every scan POST) | untouched | a photo upload is never cached, queued or replayed |
 | Cross-origin | untouched | the app is same-origin by CSP already |
 
@@ -417,7 +417,8 @@ phone, so server-side zero persistence is unchanged.
 
 ### 2. Batch multi-strip scanning — implemented
 
-`POST /verify-strips/batch` (multipart, 1–4 `strips` files, plus `language` and
+`POST /verify-strips/batch` (multipart, 1–5 `strips` files — the 3–5 strip basket
+is the realistic polypharmacy case — plus `language` and
 `paracetamol_taken_today_mg`) returns:
 
 ```json
@@ -429,7 +430,7 @@ phone, so server-side zero persistence is unchanged.
 ```
 
 `app/extraction.py:extract_batch()` reads the payloads with a concurrency cap of
-2, so a four-strip basket cannot fire four vision calls at once from a cheap
+3, so a five-strip basket cannot fire five vision calls at once from a cheap
 phone's connection. `app/clinical.py:analyse_basket()` returns a `BasketReport`:
 each strip analysed alone *and* the whole basket analysed as one set. The combined
 pass is the clinically important one — a duplicate salt or a LASA pair usually
@@ -483,7 +484,7 @@ Not implemented in this build: no clips, no manifest, no playback code. It is
 listed here so the delivery shape and the licensing/clinical-review requirement
 are agreed before anyone records voice talent.
 
-### New tests (13, in `tests/test_nextgen.py`)
+### New tests (14, in `tests/test_nextgen.py`)
 
 Public taxonomy feed, service-worker route + scope header + precache list +
 never-cache-POST assertion, batch basket shape and per-strip indexes, 4-strip cap
@@ -526,7 +527,9 @@ Two files carry the edge rules, and both are checked by tests so they cannot rot
 * **`deploy/nginx.kathapulse.conf`** — TLS 1.2/1.3 termination, HSTS
   (`max-age=63072000; includeSubDomains`), `server_tokens off`,
   `client_max_body_size 7m` (just above the app's 6 MiB so the app's own 413 is
-  what a user sees), per-IP `limit_req` zones (30/min scans, 120/min reads),
+  what a user sees), per-IP `limit_req` zones (30/min scans, 120/min reads) as a
+  token bucket, plus the in-app sliding window below where a bucket boundary is
+  not good enough,
   `limit_conn`, `proxy_request_buffering off` for uploads (nothing is spooled to
   an nginx temp file), and an explicit WebSocket upgrade block for `/ws/relay/`.
 * **`deploy/cloudflare-rules.md`** — Full (strict) TLS, Always Use HTTPS, HSTS,
@@ -537,6 +540,30 @@ Two files carry the edge rules, and both are checked by tests so they cannot rot
   `/docs/oauth2-redirect` now return a `no-store` 404 unless
   `KATHA_DOCS_ENABLED=1`. Three layers — Cloudflare, nginx, app — because the app
   is the one that survives a proxy misconfiguration.
+
+### In-app sliding-window rate limiting (Pass 20)
+
+nginx's `limit_req` is a leaky bucket: it can admit a burst right after a
+boundary. `app/ratelimit.py` adds a true **sliding window** as a backstop, with
+the same 30 req/min default as the edge rule:
+
+| Property | Value |
+|---|---|
+| Window | rolling 60s, pruned per admission (no fixed-bucket burst) |
+| Key | client IP from the socket; nothing else is recorded |
+| Storage | in-process `dict[str, deque[float]]` — RAM only, no file, no Redis |
+| Bound | 4096 clients max, coldest evicted, so address floods cannot grow it |
+| Response | `429` + `Retry-After` + `no-store`, no client identifier echoed |
+| Default | **off** (`KATHA_RATE_LIMIT_PER_MIN=0`): the edge owns the budget |
+
+Enable it for a bare container or a hospital LAN install with no proxy:
+
+```bash
+KATHA_RATE_LIMIT_PER_MIN=30 ./scripts/serve.sh
+```
+
+It is deliberately not a log: counters are timestamps per IP, discarded with the
+process, which keeps the zero-persistence posture of the scan path intact.
 
 ### Multilingual architecture
 

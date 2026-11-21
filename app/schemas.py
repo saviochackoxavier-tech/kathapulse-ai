@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 MAX_IMAGE_BYTES = 6 * 1024 * 1024  # 6 MiB is generous for a 1600px JPEG.
 MAX_MEDICINES_PER_SCAN = 10
 MAX_TEXT_CHARS = 120
-MAX_STRIPS_PER_BATCH = 4
+MAX_STRIPS_PER_BATCH = 5  # a real polypharmacy basket: 3-5 strips
 
 ALLOWED_IMAGE_TYPES: dict[str, tuple[bytes, ...]] = {
     "image/jpeg": (b"\xff\xd8\xff",),
