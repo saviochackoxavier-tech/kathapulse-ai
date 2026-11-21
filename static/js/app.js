@@ -221,6 +221,9 @@
   // Rendering the result
   // ---------------------------------------------------------------------
   function renderResult(payload) {
+    // The run is over: clear the "checking" line here so both the photo and the
+    // named-scan paths leave no stale busy text under a finished verdict.
+    setStatus("", null);
     lastPayload = payload;
     const safety = payload.safety || {};
     const verdict = safety.verdict || "unknown";
