@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 21 November 2026
-**Build audited:** `v1.1.8` (Pass 25: `v1.1.7`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.1.9` (Pass 26: `v1.1.8`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -289,6 +289,71 @@ Set `KATHA_VISION_API_KEY=gsk_...` in **Settings → Project settings → Secret
 Expected result against the bundled sample: `extraction_status: ok`,
 `extraction_source: vision_llm`, Paracetamol 650 mg resolved, verdict `safe`
 for a single strip.
+
+---
+
+## 11. Pass 27 — dual-key rotation (built and verified here)
+
+The brief described a "newly implemented Dual-Key Groq API Rotator" and a
+`tests/test_failover.py`. Neither existed, and no second key was configured, so
+this pass implemented them rather than reporting a passing test that did not
+exist.
+
+### What was added
+
+* `app/config.py` — `KATHA_VISION_API_KEY_FALLBACK`, plus `api_keys()` (primary
+  first, blanks dropped, duplicates merged) and `key_count`.
+* `app/extraction.py` — the vision call now walks the key list. A response of
+  **429, 401 or 403** means "this key cannot serve us": the key is dropped and
+  the *same* request is retried with the next one. A lone key keeps the previous
+  behaviour exactly (one quiet retry on 429, then degrade). Failures are logged
+  by status and key index only — never the key, never the body.
+* `app/schemas.py` / `app/main.py` — `/health` now reports `vision_keys` and
+  `vision_fallback` (count + boolean, no material).
+* `tests/test_failover.py` — 15 tests, no network, no real key.
+
+### Automated verification
+
+```
+$ ./.venv/bin/pytest tests/test_failover.py
+15 passed
+$ ./.venv/bin/pytest
+147 passed
+```
+
+Covered: 429/401/403 each rotate and still extract Paracetamol 650 mg; the retry
+carries the *other* key; failover takes < 1 s and never waits on the rejected
+key; both keys rejected → `manual_required` with no exception; duplicate keys are
+not tried twice; single-key behaviour unchanged; fallback-only configuration
+works; no keys → no network call; `/health` counts are correct at 0, 1 and 2 keys
+and contain neither key; neither key appears in the logs; failover writes nothing
+to the temp directory.
+
+### Live verification over real HTTP
+
+A local two-key stand-in (`scripts/_stub_vision.py 3011 reject-primary`) returned
+`429` for `primary-demo-key` and `200` for `fallback-demo-key`. The server was
+restarted with both keys set:
+
+| Step | Observed |
+|---|---|
+| `GET /health` | `vision_keys: 2`, `vision_fallback: true`, `vision_model: stub/two-key` |
+| `POST /verify-strip` | `200`, `extraction_status: ok`, `extraction_source: vision_llm`, Telmisartan 40 + HCTZ 12.5, `verdict: safe` |
+| Stub request log | `429` then `200` — the primary was refused, the fallback served |
+| Disk | no file created by the request; the only new file was the curl output this audit wrote |
+| Speech | `safety_message_ml`, `_hi` and `_en` all present in one response |
+
+Afterwards the server was restored to its real configuration:
+`vision_keys: 0`, `vision_fallback: false`, `vision_model: null` — the preview
+never serves from the stub.
+
+### Honest status
+
+No real Groq key exists in this environment (`.env` value is empty; Pass 26
+records the same). Rotation is therefore proven against mocks and against a
+local two-key endpoint, **not** against Groq itself. The mechanism is
+provider-agnostic — it reacts to status codes, not to Groq's error text — so the
+remaining risk is credential-level, not code-level.
 
 ---
 

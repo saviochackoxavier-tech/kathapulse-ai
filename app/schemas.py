@@ -265,5 +265,9 @@ class HealthResponse(BaseModel):
     vision_model: str | None = None
     #: Endpoint host only — never the key, never a token.
     vision_base_url: str | None = None
+    #: Rotation status: how many keys can serve, and whether a fallback exists.
+    #: Counts and booleans only — never key material.
+    vision_keys: int = 0
+    vision_fallback: bool = False
     ocr_engine: str | None = None
     taxonomy_ingredients: int

@@ -92,6 +92,14 @@ returned by `/health`, and a test asserts it cannot reach either.
 `response_format: json_object` on every model; parsing is fence-tolerant, so
 ```json blocks and stray prose around the object are accepted.
 
+**Two keys (failover).** Set `KATHA_VISION_API_KEY_FALLBACK` as well and a
+primary that answers `429` (rate-limited), `401` or `403` (revoked, exhausted,
+wrong scope) is abandoned immediately: the same request is retried with the
+second key, and the first rejected key is not retried on the way. With one key
+nothing changes — the quiet single `429` retry stays. `/health` reports
+`vision_keys` and `vision_fallback` as a count and a boolean, never a value. The
+whole behaviour is pinned by `tests/test_failover.py` (15 tests, no network).
+
 Verify the tier end to end — this is the check that distinguishes "wired" from
 "working":
 
@@ -257,7 +265,8 @@ the engine catches "Telma-H + a separate HCTZ tablet".
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 132 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay/hardening/ratelimit/audio tests
+./.venv/bin/pytest                 # 147 backend: rules, LASA, accuracy, vision, dual-key failover, e2e, batch/offline/relay/hardening/ratelimit/audio
+./.venv/bin/pytest tests/test_failover.py   # 15 dual-key rotation checks on their own
 cd tests/js && npm install && npm test   # 15 EXIF-scrub checks
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
@@ -278,7 +287,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **132 passed** |
+| Backend suite | **147 passed** (132 + 15 dual-key failover) |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |

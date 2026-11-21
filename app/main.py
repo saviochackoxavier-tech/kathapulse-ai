@@ -185,6 +185,8 @@ async def health() -> HealthResponse:
     return HealthResponse(
         vision_model=engines["vision_model"],
         vision_base_url=engines["vision_base_url"],
+        vision_keys=engines["vision_keys"],
+        vision_fallback=engines["vision_fallback"],
         ocr_engine=engines["ocr_engine"],
         taxonomy_ingredients=len(all_drugs()),
     )

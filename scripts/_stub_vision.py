@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 """Throwaway stand-in for GroqCloud's chat-completions endpoint.
 
-Purpose: Pass 23 could not reach the real vision provider (no key in the
-environment), so this local server answers in exactly the shape
-``app/extraction.py`` expects. It proves the whole live-HTTP path — request
-building, base64 data URL, JSON parsing, taxonomy resolution, clinical
-analysis — without a credential.
-
-It is NOT part of the product and is never started by ``serve.sh``.
+Purpose: let the live HTTP path be exercised without a provider credential.
+It answers in exactly the shape ``app/extraction.py`` expects, and can be told
+to reject one bearer key so the dual-key rotator can be proven against a real
+server instead of only against mocks.
 
     python scripts/_stub_vision.py 3010
+    python scripts/_stub_vision.py 3010 reject-primary
+
+It is NOT part of the product and is never started by ``serve.sh``.
 """
 
 from __future__ import annotations
@@ -28,6 +28,9 @@ CANNED = {
     ]
 }
 
+#: In `reject-primary` mode every key but the last one presented is refused.
+MODE = "ok"
+
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
@@ -35,9 +38,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - http.server API
         length = int(self.headers.get("Content-Length") or 0)
         body = self.rfile.read(length)
-        if not self.headers.get("Authorization", "").startswith("Bearer "):
+        auth = self.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
             self._send(401, {"error": {"message": "missing bearer"}})
             return
+
+        key = auth.split(" ", 1)[1]
+        if MODE == "reject-primary" and key == "primary-demo-key":
+            # The scenario the rotator exists for: the first key is rate-limited.
+            self._send(429, {"error": {"message": "rate limit exceeded", "code": "rate_limit"}})
+            return
+
         try:
             payload = json.loads(body or b"{}")
         except ValueError:
@@ -75,5 +86,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 3010
-    print(f"[stub] listening on 127.0.0.1:{port}", flush=True)
+    if len(sys.argv) > 2:
+        MODE = sys.argv[2]
+    print(f"[stub] listening on 127.0.0.1:{port} mode={MODE}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()

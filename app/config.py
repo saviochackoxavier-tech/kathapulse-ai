@@ -60,10 +60,28 @@ class VisionSettings:
     model: str
     timeout_s: float
     json_mode: bool = False
+    fallback_api_key: str = ""
+
+    def api_keys(self) -> list[str]:
+        """Primary first, then the fallback: blanks dropped, duplicates merged.
+
+        Two keys let a demo survive the primary being rate-limited or revoked
+        mid-presentation; one key keeps the old single-key behaviour exactly.
+        """
+        keys: list[str] = []
+        for candidate in (self.api_key, self.fallback_api_key):
+            key = (candidate or "").strip()
+            if key and key not in keys:
+                keys.append(key)
+        return keys
+
+    @property
+    def key_count(self) -> int:
+        return len(self.api_keys())
 
     @property
     def configured(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key or self.fallback_api_key)
 
 
 def vision_settings() -> VisionSettings:
@@ -75,6 +93,7 @@ def vision_settings() -> VisionSettings:
         timeout_s=float(os.getenv("KATHA_VISION_TIMEOUT_S", "12")),
         json_mode=os.getenv("KATHA_VISION_JSON_MODE", "0").strip().lower()
         in {"1", "true", "yes"},
+        fallback_api_key=os.getenv("KATHA_VISION_API_KEY_FALLBACK", "").strip(),
     )
 
 

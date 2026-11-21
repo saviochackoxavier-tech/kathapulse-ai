@@ -35,6 +35,10 @@ from .schemas import ExtractionSource, ResolvedIngredient, ScannedMedicine
 
 logger = logging.getLogger("kathapulse.extraction")
 
+#: Responses that mean "this key cannot serve us" rather than "we sent rubbish".
+#: 429 = rate limited, 401/403 = revoked, exhausted or scoped to another model.
+_ROTATE_STATUSES = frozenset({401, 403, 429})
+
 _VISION_PROMPT = (
     "You read medicine strips sold in Indian pharmacies. "
     "Return ONLY minified JSON, no prose, no markdown: "
@@ -187,7 +191,8 @@ async def _vision_extract(
 ) -> list[tuple[str, list[str]]] | None:
     """Return [(label, names)] or None if the vision tier is unavailable."""
     cfg = config.vision_settings()  # re-read per request: no restart needed
-    if not cfg.configured:
+    keys = cfg.api_keys()
+    if not keys:
         return None
 
     data_url = f"data:{content_type};base64,{base64.b64encode(image_bytes).decode()}"
@@ -210,28 +215,41 @@ async def _vision_extract(
     if cfg.json_mode:
         payload["response_format"] = {"type": "json_object"}
 
-    headers = {
-        "Authorization": f"Bearer {cfg.api_key}",
-        "Content-Type": "application/json",
-    }
-
     content: str | None = None
     try:
         async with httpx.AsyncClient(timeout=cfg.timeout_s) as client:
-            for attempt in range(2):
-                response = await client.post(
-                    f"{cfg.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                )
-                # A burst of demo traffic can trip Groq's rate limit; one quiet
-                # retry is enough, and never blocks the UI for long.
-                if response.status_code == 429 and attempt == 0:
-                    await asyncio.sleep(1.2)
-                    continue
-                response.raise_for_status()
-                content = response.json()["choices"][0]["message"]["content"]
-                break
+            for index, key in enumerate(keys):
+                headers = {
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                }
+                # With a fallback configured, a rejected key is worth abandoning
+                # immediately: retrying a limited key only spends the demo's
+                # remaining seconds. A lone key keeps the quiet single retry.
+                last_key = index == len(keys) - 1
+                for attempt in range(2):
+                    response = await client.post(
+                        f"{cfg.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                    )
+                    if response.status_code in _ROTATE_STATUSES:
+                        if last_key and response.status_code == 429 and attempt == 0:
+                            await asyncio.sleep(1.2)
+                            continue
+                        # Status only: never the key, never the response body.
+                        logger.warning(
+                            "vision key %d/%d unusable (%s)",
+                            index + 1,
+                            len(keys),
+                            response.status_code,
+                        )
+                        break
+                    response.raise_for_status()
+                    content = response.json()["choices"][0]["message"]["content"]
+                    break
+                if content:
+                    break
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
         # Log the failure type only: never the payload, never the key.
         logger.warning("vision tier unavailable (%s), trying next tier", type(exc).__name__)
@@ -359,5 +377,9 @@ def active_engines() -> dict[str, Any]:
     return {
         "vision_model": cfg.model if cfg.configured else None,
         "vision_base_url": cfg.base_url if cfg.configured else None,
+        # Rotation status, never key material: how many keys can serve, and
+        # whether a rejected primary has somewhere to go.
+        "vision_keys": cfg.key_count,
+        "vision_fallback": bool(cfg.fallback_api_key),
         "ocr_engine": ocr,
     }
