@@ -325,6 +325,25 @@ async def extract(image_bytes: bytes, content_type: str) -> Extraction:
     return Extraction(medicines=[], source=ExtractionSource.none, status="manual_required")
 
 
+async def extract_batch(
+    payloads: list[tuple[bytes, str]], concurrency: int = 2
+) -> list[Extraction]:
+    """Read several strips for one basket, still entirely in RAM.
+
+    Each payload is the same ``(bytes, content_type)`` pair :func:`extract`
+    takes; the image bytes are already validated and bounded by the caller.
+    Concurrency is capped so a four-strip basket cannot spin up four vision
+    calls at once on a cheap phone's shared connection.
+    """
+    gate = asyncio.Semaphore(max(1, concurrency))
+
+    async def one(payload: tuple[bytes, str]) -> Extraction:
+        async with gate:
+            return await extract(*payload)
+
+    return list(await asyncio.gather(*(one(payload) for payload in payloads)))
+
+
 def active_engines() -> dict[str, Any]:
     """Report which extraction tiers are live (used by /health)."""
     cfg = config.vision_settings()

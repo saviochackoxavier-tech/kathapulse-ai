@@ -708,6 +708,15 @@
     if (state.name !== "error") setStatus("", null);
   });
 
+  // Offline shell (roadmap item 6): cache the UI + taxonomy so a pharmacy with
+  // one bar of signal still gets an instant paint. Best-effort: a browser that
+  // refuses service workers (private mode, older WebView) must lose nothing.
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+    });
+  }
+
   // Initial paint
   els.retryBtn.textContent = State.RETRY_COPY[language] || State.RETRY_COPY.en;
   applyStepLabels();

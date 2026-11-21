@@ -15,17 +15,29 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import clinical, extraction, i18n
+from . import clinical, extraction, i18n, relay
 from .schemas import (
     ALLOWED_IMAGE_TYPES,
     MAX_IMAGE_BYTES,
+    MAX_STRIPS_PER_BATCH,
+    BatchVerifyResponse,
     HealthResponse,
     Language,
+    StripReport,
     VerifyResponse,
     VerifyTextRequest,
 )
@@ -81,6 +93,41 @@ async def index() -> FileResponse:
 async def favicon() -> FileResponse:
     """Browsers probe /favicon.ico even with a declared icon; answer it."""
     return FileResponse(f"{STATIC_DIR}/favicon.svg", media_type="image/svg+xml")
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker() -> FileResponse:
+    """Serve the offline shell from the root so its scope covers the whole app."""
+    return FileResponse(
+        f"{STATIC_DIR}/sw.js",
+        media_type="text/javascript",
+        headers={"Service-Worker-Allowed": "/"},
+    )
+
+
+@app.get("/taxonomy.json", include_in_schema=False)
+async def taxonomy_feed() -> JSONResponse:
+    """Public, cacheable taxonomy feed for the offline shell and pharmacist tools.
+
+    Data only: no patient data, no keys, nothing request-specific.
+    """
+    drugs = [
+        {
+            "canonical": drug.canonical,
+            "name_en": drug.name_en,
+            "name_ml": drug.name_ml,
+            "name_hi": drug.name_hi,
+            "drug_class": drug.drug_class,
+            "default_strength_mg": drug.default_strength,
+            "daily_max_mg": drug.daily_max_mg,
+            "combo_partner": drug.combo_partner,
+            "aliases": list(drug.aliases),
+        }
+        for drug in all_drugs()
+    ]
+    return JSONResponse(
+        {"version": app.version, "count": len(drugs), "drugs": drugs}
+    )
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -214,6 +261,93 @@ async def verify_medicines(payload: VerifyTextRequest) -> VerifyResponse:
 @app.exception_handler(HTTPException)
 async def http_error(_: Request, exc: HTTPException) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.post("/verify-strips/batch", response_model=BatchVerifyResponse)
+async def verify_strips_batch(
+    strips: list[UploadFile] = File(..., description="One photo per strip, 1-4 strips"),
+    language: Language = Form(Language.malayalam),
+    paracetamol_taken_today_mg: float = Form(0.0, ge=0, le=20000),
+) -> BatchVerifyResponse:
+    """Read several strips for one basket and analyse them together.
+
+    Every upload is validated by the same in-memory path as a single scan and
+    released as soon as it is read; nothing is written to disk, and no strip is
+    cached beyond this request.
+    """
+    if not strips:
+        raise HTTPException(status_code=400, detail="Send at least one strip photo.")
+    if len(strips) > MAX_STRIPS_PER_BATCH:
+        raise HTTPException(
+            status_code=413,
+            detail=f"A basket is limited to {MAX_STRIPS_PER_BATCH} strips per scan.",
+        )
+
+    payloads: list[tuple[bytes, str]] = []
+    total_bytes = 0
+    for upload in strips:
+        data, content_type = await _read_upload(upload)
+        payloads.append((data, content_type))
+        total_bytes += len(data)
+
+    results = await extraction.extract_batch(payloads)
+
+    baskets: list[list[clinical.ScannedMedicine]] = []
+    for result in results:
+        medicines = result.medicines
+        if not medicines:
+            # Nothing legible: keep the strip honest rather than dropping it.
+            medicines = [
+                clinical.ScannedMedicine(label="unreadable", matched=False, ingredients=[])
+            ]
+        baskets.append(medicines)
+
+    report = await run_in_threadpool(
+        clinical.analyse_basket, baskets, language, paracetamol_taken_today_mg
+    )
+    return BatchVerifyResponse(
+        strip_count=len(results),
+        strips=[
+            StripReport(strip_index=index, medicines=medicines, safety=safety)
+            for index, (medicines, safety) in enumerate(zip(baskets, report.per_strip))
+        ],
+        combined=report.combined,
+        disclaimer=i18n.language_text("disclaimer"),
+        language=language,
+        image_bytes_received=total_bytes,
+        **_flatten_flags(report.combined),
+    )
+
+
+@app.websocket("/ws/relay/{room_id}")
+async def pharmacist_relay(websocket: WebSocket, room_id: str) -> None:
+    """Zero-retention pharmacist relay: forward, then forget.
+
+    Refuses every connection unless ``KATHA_RELAY_SECRET`` is configured, and
+    every connection needs a valid short-lived ticket for this room. Messages
+    are never stored, logged or replayed; the room disappears with its last peer.
+    """
+    if not relay.configured():
+        await websocket.close(code=1011, reason="relay not configured")
+        return
+    if not relay.verify_ticket(room_id, websocket.query_params.get("ticket", "")):
+        await websocket.close(code=1008, reason="invalid ticket")
+        return
+    if relay.HUB.is_full(room_id):
+        await websocket.close(code=1013, reason="room full")
+        return
+
+    await relay.HUB.connect(room_id, websocket)
+    try:
+        while True:
+            message = await websocket.receive_text()
+            if len(message.encode("utf-8")) > relay.MAX_MESSAGE_BYTES:
+                continue  # oversized frames are dropped, not relayed
+            await relay.HUB.broadcast(room_id, websocket, message)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await relay.HUB.disconnect(room_id, websocket)
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

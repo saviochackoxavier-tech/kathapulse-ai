@@ -244,11 +244,13 @@ the engine catches "Telma-H + a separate HCTZ tablet".
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 87 backend, rules, LASA, accuracy, vision and e2e tests
+./.venv/bin/pytest                 # 100 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay tests
 cd tests/js && npm install && npm test   # 15 EXIF-scrub checks
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
 cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
+# Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
+# POST /verify-strips/batch (1-4 strips) and the zero-retention /ws/relay handshake.
 ```
 
 The preset suite is the integration one: it POSTs the three demo scenarios to the
@@ -261,7 +263,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **87 passed** |
+| Backend suite | **100 passed** |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
@@ -372,7 +374,7 @@ Error handling in `app.js`:
 | Speech fallback (offline-resilient) | **Pass (logic verified, no audio heard)** | The warning script is always rendered on screen; if `speechSynthesis` is missing or has no `ml-IN`/`hi-IN` voice, the panel switches to an amber "read this" state instead of throwing. Chunking keeps utterances under 170 chars because Android truncates long ones. |
 | Preview accessibility | **Pass (local + Host-header verified)** | Supervised server on `0.0.0.0:3004`; `GET /` → 200 (8.1 KB), all six `/static/*` assets → 200 (CSS 17 KB, four JS files 4.9–27.8 KB, `favicon.svg` 295 B) and `/favicon.ico` → 200 (SVG, 295 B), so a live page load shows zero 404/403 requests in the browser console. Killing the worker process itself, the supervisor restarts it and the next request still returns 200. The public `*.style.dev` URL answers 403 to any request without the owner's session — that is the preview auth gate, not a refused connection. |
 | LASA detection accuracy | **Pass** | `Amaryl`+`Amlopres` → spoken-collision alert; `Telma 40`+`Telma-H` → LASA **and** duplicate salt; `Zerodol`+`Zerodol-SP`, `Pan 40`+`Pan-D` likewise; `Loprin`+`Loprin-LS` → verification wording, no composition claim. Every alert carries full Malayalam and Hindi copy. |
-| Regression safety | **Pass** | 87 pytest, 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 5/5 ad-hoc DOM checks of the preset/manual wiring. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
+| Regression safety | **Pass** | 100 pytest (87 original + 13 next-gen), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
 | RAM ephemerality | **Pass** | AST test still walks `main.py` and `extraction.py` for `tempfile`/`open()`/`shutil`; vision bytes go out as a base64 data URL, OCR decodes from `io.BytesIO`. |
 | End-to-end flow | **Pass (logic verified)** | `tests/test_e2e.py` drives a real multipart POST through validation → extraction → rules → JSON with cards, speech script and flags. The camera→canvas→fetch→speech chain is covered by the EXIF suite + state-machine suite + live server calls; a human still has to tap it on a phone, which I could not do here. |
 | Error resilience | **Pass** | Timeout, offline, 413/415/422/5xx, camera denial, unreadable image and missing speech API all land on   a localised card or the amber read-aloud fallback. 18/18 state checks, including "FATAL from every state". |
@@ -380,9 +382,115 @@ Error handling in `app.js`:
 | Security verification | **Pass** | EXIF suite + AST test + `no-store` headers + magic-byte and 6 MiB limits + `forbid` schemas + injection blocklist (422 on attempt). No accounts, no cookies, no disk writes. |
 | Secret hygiene | **Pass** | Key read from env/`.env` per request; `.env` gitignored and verified with `git check-ignore`; no key material anywhere in `app/`, `static/`, `scripts/` or `tests/` (grep sweep); `/health` exposes endpoint and model only; a test asserts the key never reaches logs or responses. |
 | Live vision extraction | **Blocked on the key** | The Groq tier is implemented and covered by 19 stubbed tests (endpoint, auth header, data-URL shape, fence tolerance, brand+strength mapping, 401/500/nonsense degradation, no-key → no network call). It cannot be *demonstrated* until `KATHA_VISION_API_KEY` is present in the environment — `scripts/check_vision.py` is the one-command proof. |
-| Release package | **Pass** | `requirements.txt` pins match the installed, tested versions exactly (fastapi 0.115.6, uvicorn 0.34.0, pydantic 2.10.4, python-multipart 0.0.20, httpx 0.28.1, pytest 8.3.4); `Dockerfile` (non-root, healthcheck) + `.dockerignore` (keeps `.env` out of the image) + `Procfile` added; `uvicorn` started from the declared command serves `/`, all five `/static/*` assets and `/health`; a real POST leaves no upload artifact on disk. Caveat: the image was not built (no Docker daemon access in this sandbox). |
+| Release package | **Pass** | `requirements.txt` pins match the installed, tested versions exactly (fastapi 0.115.6, uvicorn 0.34.0, pydantic 2.10.4, python-multipart 0.0.20, httpx 0.28.1, pytest 8.3.4); `Dockerfile` (non-root, healthcheck) + `.dockerignore` (keeps `.env` out of the image) + `Procfile` added; `uvicorn` started from the declared command serves `/`, all six `/static/*` assets, `/sw.js`, `/taxonomy.json` and `/health`; a real POST leaves no upload artifact on disk. Caveat: the image was not built (no Docker daemon access in this sandbox). |
 | Production readiness | **9.5/10** | Environment-only config read per request, `/health`, supervised server, container + Procfile, pins matching the tested versions, tests for every layer. Missing for a hospital pilot: CI pipeline, rate limiting/abuse caps, and a live vision key. |
 | Code quality | **9/10** | Modular (schemas / taxonomy / clinical / extraction / i18n / state / capture / speech / app), typed, commented on *why*, no dead code. Loses one point for the hand-curated taxonomy and the absence of a CI pipeline. |
+
+## Next-gen roadmap (Pass 18)
+
+Four scaling features are specified here. Two are implemented and tested in this
+build (offline shell, batch basket scan), one is implemented as a guarded stub
+(pharmacist relay), and one is an architecture plan with no code yet (WASM audio
+pack). Each stays inside the two hard rules: **nothing about a patient is written
+to disk or retained server-side**, and **no feature may make the warning harder to
+read** for a 70-year-old.
+
+### 1. Offline-first PWA shell — implemented
+
+`static/sw.js`, served from `/sw.js` (root scope, `Service-Worker-Allowed: /`) so
+it controls the whole app rather than just `/static/`. Registered from `app.js`
+after `load`, and failing registration is silent by design.
+
+| Request | Strategy | Why |
+|---|---|---|
+| Navigation (`/`) | network-first, cached shell fallback | a deploy shows up immediately on good signal, and the app still opens with no signal |
+| `/static/*`, `/taxonomy.json` | stale-while-revalidate | instant paint, fresh copy in the background for the next visit |
+| Any non-GET (every scan POST) | untouched | a photo upload is never cached, queued or replayed |
+| Cross-origin | untouched | the app is same-origin by CSP already |
+
+`CACHE_VERSION` is bumped per asset change and old caches are deleted on
+`activate`. Precaching uses individual `cache.add()` calls so one missing URL
+cannot leave the app with no cache. `GET /taxonomy.json` is the new public feed
+that makes offline lookup possible: drug data only, no keys, no request data.
+Note what this is *not*: the Cache API is client-side storage on the patient's own
+phone, so server-side zero persistence is unchanged.
+
+### 2. Batch multi-strip scanning — implemented
+
+`POST /verify-strips/batch` (multipart, 1–4 `strips` files, plus `language` and
+`paracetamol_taken_today_mg`) returns:
+
+```json
+{"strip_count": 2,
+ "strips": [{"strip_index": 0, "medicines": [...], "safety": {...}},
+            {"strip_index": 1, "medicines": [...], "safety": {...}}],
+ "combined": {"verdict": "critical", "findings": [...], "speech": {...}},
+ "processed_in_memory": true}
+```
+
+`app/extraction.py:extract_batch()` reads the payloads with a concurrency cap of
+2, so a four-strip basket cannot fire four vision calls at once from a cheap
+phone's connection. `app/clinical.py:analyse_basket()` returns a `BasketReport`:
+each strip analysed alone *and* the whole basket analysed as one set. The combined
+pass is the clinically important one — a duplicate salt or a LASA pair usually
+only appears when two strips meet (there is a test for exactly that: two harmless
+strips, one critical basket). Every upload goes through the same magic-byte, 6 MiB
+and content-type checks as a single scan and is released as soon as it is read.
+
+### 3. Pharmacist verification relay — guarded stub
+
+`ws://…/ws/relay/{room_id}?ticket=<expiry>.<hmac>` (`app/relay.py`).
+
+* **Refuses everything unless `KATHA_RELAY_SECRET` (16+ chars) is set**, so an
+  unconfigured deployment cannot become an open relay.
+* Tickets are `HMAC-SHA256(secret, "room:expiry")[:32]`, valid for 120s with a
+  30s skew window, compared in constant time. Issuing one belongs to the
+  pharmacy's own backend; this service only verifies.
+* Rooms are opaque codes, capped at 8 peers, and messages are capped at 2 KB.
+  A frame is forwarded to the other sockets in the room and then dropped: no
+  queue, no transcript, no replay, no logging, no database. When the last peer
+  leaves, the room object is deleted.
+* `/health` and `relay.HUB.stats()` expose aggregate counts only.
+
+Production notes before this touches a real pharmacy: terminate TLS and use
+`wss://`, move rate limiting in front of the handshake, add message-level
+signing for the pharmacist's identity, and audit the relay under the same DPDP
+review as the scan path.
+
+### 4. WASM local audio pack — architecture only
+
+Today speech goes through the Web Speech API, which is silent on any phone
+without a Malayalam voice (the UI says so rather than reading English aloud).
+The plan is to ship the warning audio itself:
+
+1. **Pack format.** One short clip per `(finding.code, language)` — roughly 30
+   lines of Malayalam and Hindi, encoded as Opus in WebM at 24 kbps mono (about
+   8–12 KB each, under 1 MB for the whole pack). Pre-rendered by a professional
+   Malayalam/Hindi voice, reviewed by a clinician, versioned with the taxonomy.
+2. **Delivery.** `/audio/{lang}/{code}.webm` served statically with an immutable
+   cache header, plus a `manifest.json` of clip versions. The service worker
+   precaches the pack for the selected language only.
+3. **Playback.** `<audio>` with a tiny JS queue (intro → findings → action) and a
+   hard fallback chain: pack clip → `SpeechSynthesis` → written warning. A WASM
+   decoder (e.g. `wasm-audio-decoders`) is only needed for older WebViews that
+   cannot play Opus/WebM; it is not required for the pack itself, which is why
+   this stays a delivery problem rather than a compilation problem.
+4. **Why it matters.** It removes the device-dependency that currently makes the
+   read-aloud feature unreliable on the cheapest Android phones, and it is the
+   only way to guarantee the critical warning can be heard in a noisy shop.
+
+Not implemented in this build: no clips, no manifest, no playback code. It is
+listed here so the delivery shape and the licensing/clinical-review requirement
+are agreed before anyone records voice talent.
+
+### New tests (13, in `tests/test_nextgen.py`)
+
+Public taxonomy feed, service-worker route + scope header + precache list +
+never-cache-POST assertion, batch basket shape and per-strip indexes, 4-strip cap
+(413), empty basket (422), per-upload validation (415), cross-strip duplicate
+detection, relay ticket round trip and three rejections, relay refusal when
+unconfigured and on a forged ticket, peer-to-peer forwarding with room teardown,
+and oversized-frame dropping. Total backend suite: **100 passed**.
 
 ## Known limitations
 

@@ -504,3 +504,31 @@ def analyse(
         findings=findings,
         speech=build_speech(findings, language),
     )
+
+
+@dataclass(frozen=True)
+class BasketReport:
+    """Per-strip reports plus the combined verdict for a multi-strip scan."""
+
+    per_strip: list[SafetyReport]
+    combined: SafetyReport
+
+
+def analyse_basket(
+    strips: list[list[ScannedMedicine]],
+    language: Language,
+    paracetamol_taken_today_mg: float = 0.0,
+) -> BasketReport:
+    """Analyse each strip alone, then the whole basket as one set.
+
+    The combined pass is not a concatenation of the per-strip verdicts: a
+    duplicate salt, a duplicated drug class or a LASA pair usually only shows
+    up when two strips meet. Per-strip reports exist so the UI can label which
+    strip contributed what, not so they can be summed.
+    """
+    per_strip = [
+        analyse(strip, language, paracetamol_taken_today_mg) for strip in strips
+    ]
+    everything = [medicine for strip in strips for medicine in strip]
+    combined = analyse(everything, language, paracetamol_taken_today_mg)
+    return BasketReport(per_strip=per_strip, combined=combined)

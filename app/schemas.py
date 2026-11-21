@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 MAX_IMAGE_BYTES = 6 * 1024 * 1024  # 6 MiB is generous for a 1600px JPEG.
 MAX_MEDICINES_PER_SCAN = 10
 MAX_TEXT_CHARS = 120
+MAX_STRIPS_PER_BATCH = 4
 
 ALLOWED_IMAGE_TYPES: dict[str, tuple[bytes, ...]] = {
     "image/jpeg": (b"\xff\xd8\xff",),
@@ -218,6 +219,37 @@ class VerifyResponse(BaseModel):
     # The full tri-lingual findings stay the source of truth; these mirror the
     # speech script so a client can hand `safety_message_ml` / `safety_message_hi`
     # straight to SpeechSynthesis without walking the findings tree.
+    safety_message_ml: str = ""
+    safety_message_hi: str = ""
+    duplicate_salt_warning: bool = False
+    lasa_risk: bool = False
+
+
+class StripReport(BaseModel):
+    """One strip inside a batch, analysed on its own."""
+
+    strip_index: int
+    medicines: list[ScannedMedicine]
+    safety: SafetyReport
+
+
+class BatchVerifyResponse(BaseModel):
+    """A multi-strip scan: every strip plus the combined basket analysis.
+
+    The combined report is the one that matters clinically — the dangerous
+    duplicate usually only appears *across* strips, never inside one.
+    """
+
+    scan_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:16])
+    strip_count: int
+    strips: list[StripReport]
+    combined: SafetyReport
+    disclaimer: LanguageText
+    language: Language
+    processed_in_memory: Literal[True] = True
+    image_bytes_received: int = 0
+
+    # -- flat fields mirroring the combined speech script -----------------
     safety_message_ml: str = ""
     safety_message_hi: str = ""
     duplicate_salt_warning: bool = False
