@@ -69,14 +69,25 @@ def main() -> int:
         return 2
 
     cfg = config.vision_settings()
-    print("vision tier :", "configured" if cfg.configured else "NOT configured")
+    print("this shell  :", "key present" if cfg.configured else "no key (fine if the server has one)")
     print("endpoint    :", cfg.base_url)
     print("model       :", cfg.model)
-    print("key         :", "present (value never printed)" if cfg.configured else "missing")
-    if not cfg.configured:
+
+    # The server is what actually calls the provider; this script's own
+    # environment may legitimately be empty (e.g. the key lives in Secrets and
+    # only the service process sees it). Ask the server rather than guessing.
+    server_tier = "unknown"
+    try:
+        with urllib.request.urlopen(url.replace("/verify-strip", "/health"), timeout=5) as health:
+            server_tier = json.load(health).get("vision_model") or "disabled"
+    except Exception:
+        pass
+    print("server tier :", server_tier)
+    if server_tier == "disabled":
         print(
-            "\nSet KATHA_VISION_API_KEY in Settings -> Project settings -> Secrets,\n"
-            "or as a line in .env (gitignored). Then re-run this script.\n"
+            "\nThe server has no vision key, so it can only answer manual_required.\n"
+            "Put KATHA_VISION_API_KEY in Settings -> Project settings -> Secrets (or in\n"
+            ".env, which is gitignored), restart the server, then re-run this script.\n"
         )
 
     body, content_type = build_multipart(image_path.read_bytes(), image_path.name, args.lang)

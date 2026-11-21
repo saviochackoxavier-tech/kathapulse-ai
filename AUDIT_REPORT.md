@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 21 November 2026
-**Build audited:** `v1.1.7` (Pass 24: `v1.1.6`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.1.8` (Pass 25: `v1.1.7`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -237,6 +237,61 @@ audio pack exists to close.
 | Bilingual consistency (en/ml/hi error states + speech triggers) | **Pass** — 12/12 layout combinations, correct scripts, and a language switch now speaks the selected language |
 | `AUDIT_REPORT.md` generated and accurate | **Pass** |
 
+---
+
+## 10. Pass 26 — live vision pre-flight (blocked, not failed)
+
+The brief for this pass stated that a Groq key (`gsk_...`) had been injected.
+It had not. Measured state:
+
+| Probe | Result |
+|---|---|
+| `.env` value length for `KATHA_VISION_API_KEY` | **0 characters** (line present, value empty) |
+| Key present in the process/shell environment | **no** |
+| `/health` from the running service | `vision_model: null` → tier disabled |
+| `GET https://api.groq.com/openai/v1/models` from this sandbox, no credentials | **HTTP 401 `invalid_api_key`**, TLS connect 13 ms |
+| `scripts/check_vision.py` | `server tier : disabled` → `RESULT: FAIL — manual_required` |
+
+The 401 is the informative part: the sandbox **can** reach Groq over TLS, so once
+the key is set, the only remaining variable is the provider's answer — not
+network, DNS or proxy configuration.
+
+### What is verified regardless
+
+* **Graceful degradation** — with no key, `POST /verify-strip` returns `200`,
+  `extraction_status: manual_required`, `extraction_source: none`,
+  `verdict: unknown`, a Malayalam read-aloud prompt and
+  `processed_in_memory: true`. It never guesses a medicine and never 500s.
+* **Secret hygiene** — `.env` is gitignored and untracked; no tracked file
+  contains `gsk_` or a `Bearer` token; no file served from `static/` references
+  a key or `KATHA_VISION_*`; `/health` exposes only whether the tier is on; the
+  415 error body contains no environment data; `.env.example` now shows the
+  `gsk_` prefix as a placeholder.
+* **Sample legibility** — `samples/strip-dolo.jpg` is a clean, high-contrast
+  "DOLO 650 / PARACETAMOL 650 mg" strip, so the first live run will be a fair
+  test of the model rather than of the fixture.
+* **No regressions** — 132 pytest + 73 frontend checks still pass.
+
+`scripts/check_vision.py` was corrected in this pass: it used to print
+"NOT configured" from its own shell even when the server was configured (the key
+may live only in the service's environment). It now reports the server's tier by
+asking `/health`, so a judge reading the output is not misled.
+
+### To finish this pass
+
+Set `KATHA_VISION_API_KEY=gsk_...` in **Settings → Project settings → Secrets**
+(never in chat), restart the server, then:
+
+```bash
+./.venv/bin/python scripts/check_vision.py     # exit 0 = live extraction worked
+```
+
+Expected result against the bundled sample: `extraction_status: ok`,
+`extraction_source: vision_llm`, Paracetamol 650 mg resolved, verdict `safe`
+for a single strip.
+
+---
+
 **Overall: 9/10.** Points withheld for the two things this environment cannot
-certify: a live Groq extraction and audible playback of real clips. Both are
-documented above rather than presented as verified.
+certify: a live Groq extraction (no key exists here) and audible playback of
+real clips. Both are documented above rather than presented as verified.
