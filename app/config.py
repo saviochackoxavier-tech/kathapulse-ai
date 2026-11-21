@@ -78,6 +78,15 @@ def vision_settings() -> VisionSettings:
     )
 
 
+def docs_enabled() -> bool:
+    """Expose /docs, /redoc and /openapi.json? Off unless explicitly enabled.
+
+    A public safety tool has no reason to publish its schema; hiding it is the
+    app-side half of the ingress rule that blocks those paths at the proxy.
+    """
+    return os.getenv("KATHA_DOCS_ENABLED", "0").strip().lower() in {"1", "true", "yes"}
+
+
 def ocr_enabled() -> bool:
     """True when the local OCR tier is switched on and its library imports."""
     if os.getenv("KATHA_OCR_DISABLED", "").strip() in {"1", "true", "yes"}:

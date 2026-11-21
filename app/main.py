@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import clinical, extraction, i18n, relay
+from . import clinical, config, extraction, i18n, relay
 from .schemas import (
     ALLOWED_IMAGE_TYPES,
     MAX_IMAGE_BYTES,
@@ -77,6 +77,30 @@ async def security_headers(request: Request, call_next):
         "script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'"
     )
     return response
+
+
+#: Schema routes a public deployment should not advertise.
+_DOCS_PATHS = frozenset({"/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"})
+
+
+@app.middleware("http")
+async def hide_api_docs(request: Request, call_next):
+    """Occlude the OpenAPI surface unless ``KATHA_DOCS_ENABLED=1``.
+
+    This is the app-side half of the ingress rule that blocks these paths at the
+    proxy: even with a misconfigured proxy, a production deploy does not publish
+    its schema. Development can turn it back on with one env var.
+    """
+    if request.url.path in _DOCS_PATHS and not config.docs_enabled():
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Not Found"},
+            headers={
+                "Cache-Control": "no-store, max-age=0",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    return await call_next(request)
 
 
 # ---------------------------------------------------------------------------

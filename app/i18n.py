@@ -305,11 +305,40 @@ RISKS: dict[str, dict[str, str]] = {
 }
 
 
+#: A missing translation falls back to this language, never to a KeyError.
+#: A new language can therefore be enabled with partial coverage and still
+#: warn correctly in English while its strings land.
+FALLBACK_LANGUAGE = "en"
+
+
 def t(key: str, lang: Language | str, **kwargs: object) -> str:
-    """Fetch a localised string, filling ``{placeholders}``."""
+    """Fetch a localised string, filling ``{placeholders}``.
+
+    Unknown language codes and untranslated keys fall back to English rather
+    than raising: a partial Tamil rollout must still produce a safe warning.
+    """
     lang_code = lang.value if isinstance(lang, Language) else str(lang)
-    template = TEXTS[key][lang_code]
+    bundle = TEXTS[key]
+    template = bundle.get(lang_code) or bundle[FALLBACK_LANGUAGE]
     return template.format(**kwargs) if kwargs else template
+
+
+def missing_keys(lang_code: str) -> list[str]:
+    """Keys with no string for this language (used by the coverage test)."""
+    return sorted(key for key, bundle in TEXTS.items() if not bundle.get(lang_code))
+
+
+def coverage(lang_code: str) -> dict[str, object]:
+    """Translation coverage for one language code."""
+    missing = missing_keys(lang_code)
+    total = len(TEXTS)
+    return {
+        "language": lang_code,
+        "keys": total,
+        "translated": total - len(missing),
+        "percent": round(100 * (total - len(missing)) / total, 1) if total else 0.0,
+        "missing": missing,
+    }
 
 
 def language_text(key: str, **kwargs: object) -> LanguageText:

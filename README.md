@@ -244,7 +244,7 @@ the engine catches "Telma-H + a separate HCTZ tablet".
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 100 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay tests
+./.venv/bin/pytest                 # 116 backend, rules, LASA, accuracy, vision, e2e, batch/offline/relay/hardening tests
 cd tests/js && npm install && npm test   # 15 EXIF-scrub checks
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
@@ -263,7 +263,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **100 passed** |
+| Backend suite | **116 passed** |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
@@ -374,7 +374,7 @@ Error handling in `app.js`:
 | Speech fallback (offline-resilient) | **Pass (logic verified, no audio heard)** | The warning script is always rendered on screen; if `speechSynthesis` is missing or has no `ml-IN`/`hi-IN` voice, the panel switches to an amber "read this" state instead of throwing. Chunking keeps utterances under 170 chars because Android truncates long ones. |
 | Preview accessibility | **Pass (local + Host-header verified)** | Supervised server on `0.0.0.0:3004`; `GET /` → 200 (8.1 KB), all six `/static/*` assets → 200 (CSS 17 KB, four JS files 4.9–27.8 KB, `favicon.svg` 295 B) and `/favicon.ico` → 200 (SVG, 295 B), so a live page load shows zero 404/403 requests in the browser console. Killing the worker process itself, the supervisor restarts it and the next request still returns 200. The public `*.style.dev` URL answers 403 to any request without the owner's session — that is the preview auth gate, not a refused connection. |
 | LASA detection accuracy | **Pass** | `Amaryl`+`Amlopres` → spoken-collision alert; `Telma 40`+`Telma-H` → LASA **and** duplicate salt; `Zerodol`+`Zerodol-SP`, `Pan 40`+`Pan-D` likewise; `Loprin`+`Loprin-LS` → verification wording, no composition claim. Every alert carries full Malayalam and Hindi copy. |
-| Regression safety | **Pass** | 100 pytest (87 original + 13 next-gen), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
+| Regression safety | **Pass** | 116 pytest (87 original + 13 next-gen + 16 hardening), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
 | RAM ephemerality | **Pass** | AST test still walks `main.py` and `extraction.py` for `tempfile`/`open()`/`shutil`; vision bytes go out as a base64 data URL, OCR decodes from `io.BytesIO`. |
 | End-to-end flow | **Pass (logic verified)** | `tests/test_e2e.py` drives a real multipart POST through validation → extraction → rules → JSON with cards, speech script and flags. The camera→canvas→fetch→speech chain is covered by the EXIF suite + state-machine suite + live server calls; a human still has to tap it on a phone, which I could not do here. |
 | Error resilience | **Pass** | Timeout, offline, 413/415/422/5xx, camera denial, unreadable image and missing speech API all land on   a localised card or the amber read-aloud fallback. 18/18 state checks, including "FATAL from every state". |
@@ -491,6 +491,84 @@ never-cache-POST assertion, batch basket shape and per-strip indexes, 4-strip ca
 detection, relay ticket round trip and three rejections, relay refusal when
 unconfigured and on a forged ticket, peer-to-peer forwarding with room teardown,
 and oversized-frame dropping. Total backend suite: **100 passed**.
+
+## Production hardening (Pass 19)
+
+### Container posture
+
+| Property | Value | Checked by |
+|---|---|---|
+| Base image | `python:3.12-slim` (Debian, glibc) | static audit |
+| Runtime user | `katha`, uid **10001**, `USER` after install, never reverted | `test_container_runs_as_an_unprivileged_user` |
+| Writable layer | none needed — RAM-only processing, no volume, no DB | design + live POST check |
+| Dependencies | 6 pins, all `==`, no range specifiers | `test_runtime_dependencies_are_exactly_pinned` |
+| Build context | `.env`, `.git`, `.venv`, `tests/`, `__pycache__`, `node_modules` excluded | `test_build_context_excludes_secrets_tests_and_the_venv` |
+| Secrets in layers | none: no `ENV`/`ARG`/`COPY` of `KATHA_VISION_API_KEY` or `KATHA_RELAY_SECRET` | `test_container_declares_a_healthcheck_and_no_baked_secrets` |
+| Healthcheck | `urllib` GET on `/health`, 30s interval, 3s timeout, 10s start period | same test |
+| Footprint | 26 packages installed from the pins; `.venv` is 63 MB, so the runtime layer is small next to the ~130 MB slim base | measured in this sandbox |
+
+**Why not alpine.** Alpine would cut roughly 100 MB, but this stack runs
+`uvicorn[standard]` (uvloop, httptools) and `pydantic-core`, all native. They do
+publish musllinux wheels, yet the optional OCR tier (`pytesseract` +
+`tesseract-ocr`) is significantly more work to package on musl, and a musl/glibc
+mismatch here fails at import time in production rather than in CI. The decision
+is therefore: **slim + non-root + no writable layer**, with alpine available as a
+follow-up only after the OCR tier is settled and a multi-arch build is in CI.
+
+**Not verified here:** `docker build` was not run — the sandbox has a Docker CLI
+but `/var/run/docker.sock` is root-only, so the daemon rejects this user. The
+image is audited statically (parsed by tests), not built.
+
+### Ingress: nginx and Cloudflare
+
+Two files carry the edge rules, and both are checked by tests so they cannot rot:
+
+* **`deploy/nginx.kathapulse.conf`** — TLS 1.2/1.3 termination, HSTS
+  (`max-age=63072000; includeSubDomains`), `server_tokens off`,
+  `client_max_body_size 7m` (just above the app's 6 MiB so the app's own 413 is
+  what a user sees), per-IP `limit_req` zones (30/min scans, 120/min reads),
+  `limit_conn`, `proxy_request_buffering off` for uploads (nothing is spooled to
+  an nginx temp file), and an explicit WebSocket upgrade block for `/ws/relay/`.
+* **`deploy/cloudflare-rules.md`** — Full (strict) TLS, Always Use HTTPS, HSTS,
+  WAF managed rules, Bot Fight Mode, rate-limiting rules for the scan, typed and
+  relay paths, cache rules that bypass every POST, `/sw.js` and `/ws/*`, and a
+  warning that **Under Attack Mode breaks the relay**.
+* **App-side occlusion.** `/docs`, `/redoc`, `/openapi.json` and
+  `/docs/oauth2-redirect` now return a `no-store` 404 unless
+  `KATHA_DOCS_ENABLED=1`. Three layers — Cloudflare, nginx, app — because the app
+  is the one that survives a proxy misconfiguration.
+
+### Multilingual architecture
+
+`app/languages.py` is a registry, not a rewrite: one `LanguageSpec` row per
+language with code, native name, script, family, TTS locale, rollout flag and a
+concrete note.
+
+| Code | Language | Script | Family | TTS locale | Status |
+|---|---|---|---|---|---|
+| ml | Malayalam | Malayalam | Dravidian | ml-IN | **live** |
+| hi | Hindi | Devanagari | Indo-Aryan | hi-IN | **live** |
+| en | English | Latin | Germanic | en-IN | **live** |
+| ta | Tamil | Tamil | Dravidian | ta-IN | planned |
+| te | Telugu | Telugu | Dravidian | te-IN | planned |
+| kn | Kannada | Kannada | Dravidian | kn-IN | planned |
+| bn | Bengali | Bengali | Indo-Aryan | bn-IN | planned |
+| mr | Marathi | Devanagari | Indo-Aryan | mr-IN | planned |
+| gu | Gujarati | Gujarati | Indo-Aryan | gu-IN | planned |
+
+Coverage today: **31 translation keys, 100% for ml/hi/en** (`i18n.coverage()`),
+asserted by tests so a missing string cannot ship silently. New in this pass:
+`i18n.t()` falls back to English for an unknown or untranslated code instead of
+raising, so a partial Tamil rollout still produces a safe warning rather than a
+500.
+
+To add a language: (1) flip its registry row to `enabled=True`; (2) add the code
+to the `Language` enum; (3) add a field to `LanguageText`; (4) translate the 31
+keys in `app/i18n.py`; (5) add the script's font to the stack in `styles.css`
+(`"Noto Sans Tamil"`, `"Noto Sans Kannada"`, …); (6) test at 320px — Telugu and
+Tamil transliterations of drug names are longer than Malayalam; (7) confirm the
+device TTS voice for that locale, because the spoken warning degrades to text
+without it until the WASM audio pack exists.
 
 ## Known limitations
 
