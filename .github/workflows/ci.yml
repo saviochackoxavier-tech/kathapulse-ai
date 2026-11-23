@@ -1,0 +1,109 @@
+name: CI
+
+# Every push and every pull request: the backend rules engine, the vision tier's
+# dual-key failover, and all six frontend suites — including the live preset one,
+# which needs a real server, so the job starts one and waits for /health.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pytest
+        run: pytest --color=no -o addopts="" -q
+
+  frontend:
+    name: Frontend (six Node suites)
+    runs-on: ubuntu-latest
+    env:
+      KATHA_BASE_URL: http://127.0.0.1:3004
+      # No provider key in CI: the suites must pass against the degraded,
+      # keyless configuration a judge could also hit.
+      KATHA_VISION_API_KEY: ""
+      KATHA_VISION_API_KEY_FALLBACK: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: tests/js/package-lock.json
+
+      - name: Install backend (the preset suite talks to the real app)
+        run: pip install -r requirements.txt
+
+      - name: Install test dependencies
+        working-directory: tests/js
+        run: npm ci
+
+      - name: Start app and wait for /health
+        run: |
+          set -eu
+          python -m uvicorn app.main:app --host 127.0.0.1 --port 3004 \
+            --proxy-headers > /tmp/kathapulse.log 2>&1 &
+          ready=0
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3004/health > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.5
+          done
+          if [ "$ready" != "1" ]; then
+            echo "::error::app never became ready"
+            tail -n 50 /tmp/kathapulse.log
+            exit 1
+          fi
+          curl -fsS http://127.0.0.1:3004/health
+
+      - name: State machine
+        working-directory: tests/js
+        run: node state.test.mjs
+
+      - name: Retry in a DOM
+        working-directory: tests/js
+        run: node retry.test.mjs
+
+      - name: EXIF scrub
+        working-directory: tests/js
+        run: node exif-scrub.test.mjs
+
+      - name: Audio pack loader
+        working-directory: tests/js
+        run: node audio-pack.test.mjs
+
+      - name: Audio pack in a DOM
+        working-directory: tests/js
+        run: node audiopack.test.mjs
+
+      - name: Live demo presets
+        working-directory: tests/js
+        run: node presets.test.mjs
+
+      - name: Server log on failure
+        if: failure()
+        run: tail -n 100 /tmp/kathapulse.log

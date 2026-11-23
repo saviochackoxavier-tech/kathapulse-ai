@@ -6,4 +6,6 @@ __pycache__/
 .DS_Store
 node_modules/
 package-lock.json
+# ...except the test lockfile, which CI installs from with `npm ci`.
+!tests/js/package-lock.json
 artifacts/

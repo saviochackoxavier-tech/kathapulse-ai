@@ -2,8 +2,8 @@
 
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
-**Date:** 21 November 2026
-**Build audited:** `v1.1.9` (Pass 26: `v1.1.8`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Date:** 23 November 2026
+**Build audited:** `v1.2.0` (Pass 27: `v1.1.9`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -357,6 +357,94 @@ remaining risk is credential-level, not code-level.
 
 ---
 
+## 12. Pass 28 — failover refactor and CI
+
+### 12.1 The failover loop, split in two
+
+Pass 27's loop nested three concerns in one block: the key walk, the per-key
+retry policy and the HTTP call. The retry policy was expressed as a four-clause
+condition inside the loop (`last_key and status == 429 and attempt == 0`), which
+is exactly the shape that grows a bug later — the single-key rule and the
+multi-key rule were entangled in one boolean.
+
+`app/extraction.py` now has `_read_with_key()`: **one key's turn**, returning the
+model's content or `None` when that key cannot serve us. `_vision_extract()`
+keeps only the walk:
+
+```python
+for position, key in enumerate(keys, start=1):
+    content = await _read_with_key(
+        client, cfg, key, payload,
+        has_fallback=position < len(keys),
+        key_position=(position, len(keys)),
+    )
+    if content:
+        break
+```
+
+Inside the helper the two policies are now separate statements rather than one
+compound condition:
+
+| Key's situation | 429 | 401 / 403 | 5xx / malformed |
+|---|---|---|---|
+| another key behind it | log, rotate **immediately** | log, rotate | abort the tier |
+| nothing behind it (lone, or last in the chain) | sleep 1.2 s, retry **once**, then log + give up | log, give up | abort the tier |
+
+Provider errors are still deliberately outside the rotation: a 5xx is not the
+key's fault, so walking a second key would only repeat the same failure and
+spend the request budget. Behaviour is unchanged for every case the Pass 27
+tests pinned, and the one previously untested boundary — *both* keys answering
+429 — is now pinned too (3 calls: primary once, last key twice, then success).
+
+### 12.2 CI
+
+`.github/workflows/ci.yml` — two jobs, `contents: read`, per-ref concurrency
+cancel, on every push and pull request:
+
+* **backend** — Python 3.12, `pip install -r requirements.txt`, `pytest`;
+* **frontend** — Python 3.12 + Node 20 (`npm ci` with the npm cache), then
+  uvicorn on `127.0.0.1:3004`, a bounded `/health` poll, and the six Node suites
+  as separate steps, with a server-log tail on failure.
+
+The frontend job runs with both vision keys explicitly empty, so CI proves the
+keyless path and cannot leak or depend on a credential. `tests/js/package-lock.json`
+is now committed (the only lockfile that is) so `npm ci` is reproducible.
+
+Honest scope: the YAML parses (`yaml.safe_load`, 2 jobs / 4 + 13 steps) and
+every command in it was run locally in this pass — **GitHub's runner has not
+executed it**, because that requires a push, which was not authorised.
+
+### 12.3 Verification
+
+```
+$ ./.venv/bin/pytest -o addopts="" -q
+148 passed, 1 warning in 5.05s       # 147 + the new both-429 boundary
+$ cd tests/js && node state.test.mjs     → 18/18
+$ node retry.test.mjs                    → 4/4
+$ node exif-scrub.test.mjs               → 15/15
+$ node audio-pack.test.mjs               → 10/10
+$ node audiopack.test.mjs                → 17/17
+$ node presets.test.mjs                  → 9/9   (live server, keyless)
+```
+
+The refactor moved no clinical code: `app/clinical.py`, `app/taxonomy.py` and
+`app/main.py` are untouched, so the 44-case corpus and the preset verdicts are
+unchanged by construction and by test.
+
+---
+
+## 13. Scorecard against the Pass 28 checklist
+
+| Criterion | Verdict |
+|---|---|
+| Code cleanliness — failover simplified, single-key path preserved | **Pass** — one helper per key, one walk in the caller; the single-key retry is now a named constant and a single `if`, and all 16 failover tests (including the new both-429 boundary) pass |
+| CI automation — workflow validates backend and frontend | **Pass (locally executed)** — `.github/workflows/ci.yml` runs pytest and all six Node suites against a real server; YAML validated and every command run here, but not yet by GitHub's runner |
+| Zero regressions — 147+ backend and 73 frontend checks green | **Pass** — 148 backend, 73 frontend, 0 failures, 0 skipped |
+| Production stability /10 | **9/10** — server serves `/`, `/health` and every asset; degraded keyless scan is correct; nothing in this pass touches the request path's zero-persistence guarantees |
+
+---
+
 **Overall: 9/10.** Points withheld for the two things this environment cannot
 certify: a live Groq extraction (no key exists here) and audible playback of
-real clips. Both are documented above rather than presented as verified.
+real clips. Both are documented above rather than presented as verified. CI is
+written and locally proven, but no workflow run exists on GitHub until a push.

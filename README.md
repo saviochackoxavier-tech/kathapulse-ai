@@ -98,7 +98,7 @@ wrong scope) is abandoned immediately: the same request is retried with the
 second key, and the first rejected key is not retried on the way. With one key
 nothing changes — the quiet single `429` retry stays. `/health` reports
 `vision_keys` and `vision_fallback` as a count and a boolean, never a value. The
-whole behaviour is pinned by `tests/test_failover.py` (15 tests, no network).
+whole behaviour is pinned by `tests/test_failover.py` (16 tests, no network).
 
 Verify the tier end to end — this is the check that distinguishes "wired" from
 "working":
@@ -265,9 +265,9 @@ the engine catches "Telma-H + a separate HCTZ tablet".
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 147 backend: rules, LASA, accuracy, vision, dual-key failover, e2e, batch/offline/relay/hardening/ratelimit/audio
-./.venv/bin/pytest tests/test_failover.py   # 15 dual-key rotation checks on their own
-cd tests/js && npm install && npm test   # 15 EXIF-scrub checks
+./.venv/bin/pytest                 # 148 backend: rules, LASA, accuracy, vision, dual-key failover, e2e, batch/offline/relay/hardening/ratelimit/audio
+./.venv/bin/pytest tests/test_failover.py   # 16 dual-key rotation checks on their own
+cd tests/js && npm ci && npm test        # 15 EXIF-scrub checks (npm ci: the lockfile is committed)
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
 cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
@@ -282,6 +282,24 @@ running app, then clicks each `data-demo` button in jsdom and asserts the card
 colour, the Malayalam/Hindi copy and the exact string handed to Web Speech. Start
 the server first (`./scripts/serve.sh`); point it elsewhere with
 `KATHA_BASE_URL=http://127.0.0.1:8000 node presets.test.mjs`.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs both halves on every push and pull request, in
+two independent jobs so a backend failure does not hide a frontend one:
+
+| Job | Steps |
+|---|---|
+| **Backend** | Python 3.12 → `pip install -r requirements.txt` → `pytest` |
+| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the six Node suites, one step each |
+
+The preset suite is the reason CI starts the server at all: it is the only test
+that talks to the real API. The app is started with **no** vision keys, so CI
+exercises the degraded path a judge also hits, and never needs a secret.
+`tests/js/package-lock.json` is committed for this (`npm ci` needs it; every
+other `package-lock.json` stays ignored). The workflow was syntax-checked and
+every command in it was executed locally — GitHub's own runner has not run it,
+which needs a push this sandbox is not authorised to make.
 
 Measured results from this build:
 
@@ -408,8 +426,8 @@ Error handling in `app.js`:
 | Secret hygiene | **Pass** | Key read from env/`.env` per request; `.env` gitignored and verified with `git check-ignore`; no key material anywhere in `app/`, `static/`, `scripts/` or `tests/` (grep sweep); `/health` exposes endpoint and model only; a test asserts the key never reaches logs or responses. |
 | Live vision extraction | **Blocked on the key** | The Groq tier is implemented and covered by 19 stubbed tests (endpoint, auth header, data-URL shape, fence tolerance, brand+strength mapping, 401/500/nonsense degradation, no-key → no network call). It cannot be *demonstrated* until `KATHA_VISION_API_KEY` is present in the environment — `scripts/check_vision.py` is the one-command proof. |
 | Release package | **Pass** | `requirements.txt` pins match the installed, tested versions exactly (fastapi 0.115.6, uvicorn 0.34.0, pydantic 2.10.4, python-multipart 0.0.20, httpx 0.28.1, pytest 8.3.4); `Dockerfile` (non-root, healthcheck) + `.dockerignore` (keeps `.env` out of the image) + `Procfile` added; `uvicorn` started from the declared command serves `/`, all six `/static/*` assets, `/sw.js`, `/taxonomy.json` and `/health`; a real POST leaves no upload artifact on disk. Caveat: the image was not built (no Docker daemon access in this sandbox). |
-| Production readiness | **9.5/10** | Environment-only config read per request, `/health`, supervised server, container + Procfile, pins matching the tested versions, tests for every layer. Missing for a hospital pilot: CI pipeline, rate limiting/abuse caps, and a live vision key. |
-| Code quality | **9/10** | Modular (schemas / taxonomy / clinical / extraction / i18n / state / capture / speech / app), typed, commented on *why*, no dead code. Loses one point for the hand-curated taxonomy and the absence of a CI pipeline. |
+| Production readiness | **9.5/10** | Environment-only config read per request, `/health`, supervised server, container + Procfile, pins matching the tested versions, tests for every layer, and CI on every push (backend + frontend). Missing for a hospital pilot: a live vision key, a deployed edge rule set and a licensed drug database. |
+| Code quality | **9/10** | Modular (schemas / taxonomy / clinical / extraction / i18n / state / capture / speech / app), typed, commented on *why*, no dead code, CI enforced. Loses one point for the hand-curated taxonomy. |
 
 ## Next-gen roadmap (Pass 18)
 

@@ -39,6 +39,10 @@ logger = logging.getLogger("kathapulse.extraction")
 #: 429 = rate limited, 401/403 = revoked, exhausted or scoped to another model.
 _ROTATE_STATUSES = frozenset({401, 403, 429})
 
+#: Pause before the single quiet retry of a 429. Only ever reached when there
+#: is no other key to try, so a configured fallback never pays this delay.
+_RATE_LIMIT_BACKOFF_S = 1.2
+
 _VISION_PROMPT = (
     "You read medicine strips sold in Indian pharmacies. "
     "Return ONLY minified JSON, no prose, no markdown: "
@@ -186,6 +190,56 @@ def parse_model_json(content: str) -> dict:
     return parsed
 
 
+async def _read_with_key(
+    client: httpx.AsyncClient,
+    cfg: config.VisionSettings,
+    key: str,
+    payload: dict[str, Any],
+    *,
+    has_fallback: bool,
+    key_position: tuple[int, int],
+) -> str | None:
+    """One key's turn at the vision endpoint.
+
+    Returns the model's content, or ``None`` when this key cannot serve us and
+    the caller should move to the next one. Provider-side failures (5xx, a
+    malformed envelope) are deliberately *not* caught here: they are not the
+    key's fault, so the whole tier is abandoned rather than walking a second key
+    that would fail in exactly the same way.
+
+    Two retry policies live here, and exactly one applies to any given key:
+
+    * **a key with another key behind it** — a 401/403/429 is final. Retrying a
+      rate-limited key only spends the demo's remaining seconds when the next
+      key is already waiting;
+    * **a key with nothing behind it** (a lone key, or the last one in the
+      chain) — a 429 gets one quiet retry, which is the pre-failover behaviour.
+      401/403 still stop immediately: a revoked key does not heal in a second.
+    """
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+    for attempt in range(1 if has_fallback else 2):
+        response = await client.post(
+            f"{cfg.base_url}/chat/completions", headers=headers, json=payload
+        )
+        if response.status_code not in _ROTATE_STATUSES:
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+
+        if not has_fallback and attempt == 0 and response.status_code == 429:
+            await asyncio.sleep(_RATE_LIMIT_BACKOFF_S)
+            continue
+
+        # Status only: never the key, never the response body.
+        logger.warning(
+            "vision key %d/%d unusable (%s)",
+            key_position[0],
+            key_position[1],
+            response.status_code,
+        )
+        return None
+    return None
+
+
 async def _vision_extract(
     image_bytes: bytes, content_type: str
 ) -> list[tuple[str, list[str]]] | None:
@@ -218,36 +272,15 @@ async def _vision_extract(
     content: str | None = None
     try:
         async with httpx.AsyncClient(timeout=cfg.timeout_s) as client:
-            for index, key in enumerate(keys):
-                headers = {
-                    "Authorization": f"Bearer {key}",
-                    "Content-Type": "application/json",
-                }
-                # With a fallback configured, a rejected key is worth abandoning
-                # immediately: retrying a limited key only spends the demo's
-                # remaining seconds. A lone key keeps the quiet single retry.
-                last_key = index == len(keys) - 1
-                for attempt in range(2):
-                    response = await client.post(
-                        f"{cfg.base_url}/chat/completions",
-                        headers=headers,
-                        json=payload,
-                    )
-                    if response.status_code in _ROTATE_STATUSES:
-                        if last_key and response.status_code == 429 and attempt == 0:
-                            await asyncio.sleep(1.2)
-                            continue
-                        # Status only: never the key, never the response body.
-                        logger.warning(
-                            "vision key %d/%d unusable (%s)",
-                            index + 1,
-                            len(keys),
-                            response.status_code,
-                        )
-                        break
-                    response.raise_for_status()
-                    content = response.json()["choices"][0]["message"]["content"]
-                    break
+            for position, key in enumerate(keys, start=1):
+                content = await _read_with_key(
+                    client,
+                    cfg,
+                    key,
+                    payload,
+                    has_fallback=position < len(keys),
+                    key_position=(position, len(keys)),
+                )
                 if content:
                     break
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:

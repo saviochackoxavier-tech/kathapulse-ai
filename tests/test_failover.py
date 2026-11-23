@@ -151,6 +151,26 @@ async def _timed_scan() -> dict:
     }
 
 
+def test_both_keys_rate_limited_retries_only_the_last_key(keys):
+    """The two retry policies must not leak into each other.
+
+    Both keys answer 429: the primary is abandoned on its first answer because a
+    fallback is waiting, and the fallback — which has nothing behind it — keeps
+    the one quiet retry. Three calls, never four, and never a second try at the
+    primary.
+    """
+    keys.queue = [FakeResponse(429), FakeResponse(429), FakeResponse(200, DOLO_REPLY)]
+
+    result = scan()
+
+    assert result.status == "ok"
+    assert [c["auth"] for c in keys.calls] == [
+        f"Bearer {PRIMARY}",
+        f"Bearer {FALLBACK}",
+        f"Bearer {FALLBACK}",
+    ], "the last key's single retry did not happen, or the primary was retried"
+
+
 def test_both_keys_rejected_degrades_cleanly(keys):
     keys.queue = [FakeResponse(429), FakeResponse(401)]
 
