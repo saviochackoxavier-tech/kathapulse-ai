@@ -186,9 +186,26 @@
         <p class="spoken-script" id="spoken-script"></p>
       </div>
 
+      <!-- A live countdown belongs beside the verdict it was set from. -->
+      <div class="reminder-banner" id="reminder-banner" hidden role="status">
+        <p class="reminder-next" id="reminder-next"></p>
+        <button type="button" id="cancel-reminder" class="btn btn-ghost">
+          ഓർമ്മപ്പെടുത്തൽ നിർത്തുക <span class="btn-en">Cancel</span>
+        </button>
+      </div>
+
+      <h2 class="visually-hidden">Warnings</h2>
+      <ul class="findings" id="findings"></ul>
+
+      <details class="matched-box" id="matched-box">
+        <summary>Detected medicines · കണ്ടെത്തിയ മരുന്നുകൾ</summary>
+        <ul id="matched-list"></ul>
+      </details>
+
       <!-- Dose reminders: the plan is built by the server (no storage) and the
            times are held by this tab only. A browser cannot wake a closed tab,
-           so the copy says so instead of pretending. -->
+           so the copy says so instead of pretending. It sits after the warnings
+           so the safety list stays directly under the verdict on a small phone. -->
       <div class="reminder-panel" id="reminder-panel" hidden>
         <label class="reminder-label" for="pattern">
           ഡോസ് ഓർമ്മപ്പെടുത്തൽ · Dose reminder
@@ -209,21 +226,6 @@
         <p class="reminder-help" id="reminder-help"></p>
         <p class="reminder-msg" id="reminder-msg" role="status" hidden></p>
       </div>
-
-      <div class="reminder-banner" id="reminder-banner" hidden role="status">
-        <p class="reminder-next" id="reminder-next"></p>
-        <button type="button" id="cancel-reminder" class="btn btn-ghost">
-          ഓർമ്മപ്പെടുത്തൽ നിർത്തുക <span class="btn-en">Cancel</span>
-        </button>
-      </div>
-
-      <h2 class="visually-hidden">Warnings</h2>
-      <ul class="findings" id="findings"></ul>
-
-      <details class="matched-box" id="matched-box">
-        <summary>Detected medicines · കണ്ടെത്തിയ മരുന്നുകൾ</summary>
-        <ul id="matched-list"></ul>
-      </details>
 
       <p class="disclaimer" id="disclaimer"></p>
       <p class="memory-proof" id="memory-proof"></p>

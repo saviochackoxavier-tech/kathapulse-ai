@@ -30,11 +30,11 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import i18n
+from . import clinical, i18n
 from .schemas import MAX_MEDICINES_PER_SCAN, Language, LanguageText, ManualMedicine
 
-#: Paracetamol ceiling, mirroring ``app.clinical``; measured across the schedule.
-PARACETAMOL_DAILY_MAX_MG = 4000.0
+# The paracetamol ceiling is owned by ``app.clinical`` -- the rules module the
+# rest of the app trusts -- so a reminder can never disagree with a finding.
 
 #: Hard cap on tablets in one slot; anything above is almost certainly a typo.
 MAX_TABLETS_PER_DOSE = 4
@@ -201,12 +201,6 @@ def slot_for_time(time: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _text(key: str, **kwargs: object) -> LanguageText:
-    return LanguageText(
-        **{lang: i18n.t(key, lang, **kwargs) for lang in ("en", "ml", "hi")}
-    )
-
-
 def _amount(tablets: int, lang: str) -> str:
     key = "reminder.units.one" if tablets == 1 else "reminder.units.many"
     return i18n.t(key, lang, count=tablets)
@@ -230,7 +224,7 @@ def _daily_paracetamol_mg(
         strength = sum(
             ingredient.strength_mg or 0.0
             for ingredient in medicine.ingredients
-            if ingredient.canonical == "paracetamol"
+            if ingredient.canonical == clinical.PARACETAMOL_CANONICAL
         )
         total += strength * doses_per_day
     return total
@@ -254,19 +248,19 @@ def build_plan(request: ReminderRequest) -> ReminderResponse:
         return ReminderResponse(
             scheduled=False,
             reason=reason,
-            message=_text(key),
-            safety_note=_text("reminder.safety"),
+            message=i18n.language_text(key),
+            safety_note=i18n.language_text("reminder.safety"),
         )
 
     paracetamol_mg = _daily_paracetamol_mg(request.medicines, schedule.doses_per_day)
-    if paracetamol_mg > PARACETAMOL_DAILY_MAX_MG:
+    if paracetamol_mg > clinical.PARACETAMOL_DAILY_MAX_MG:
         return ReminderResponse(
             scheduled=False,
             reason="paracetamol_limit",
-            message=_text(
+            message=i18n.language_text(
                 "reminder.paracetamol_limit", total=round(paracetamol_mg)
             ),
-            safety_note=_text("reminder.safety"),
+            safety_note=i18n.language_text("reminder.safety"),
         )
 
     names_by_lang = _medicine_names(request.medicines)
@@ -275,7 +269,7 @@ def build_plan(request: ReminderRequest) -> ReminderResponse:
 
     for time, tablets in schedule.times:
         slot = slot_for_time(time)
-        label = _text(f"reminder.slot.{slot}")
+        label = i18n.language_text(f"reminder.slot.{slot}")
         speech = LanguageText(
             **{
                 lang: i18n.t(
@@ -314,8 +308,8 @@ def build_plan(request: ReminderRequest) -> ReminderResponse:
         doses_per_day=schedule.doses_per_day,
         slots=slots,
         speech=script,
-        safety_note=_text("reminder.safety"),
-        message=_text(
+        safety_note=i18n.language_text("reminder.safety"),
+        message=i18n.language_text(
             "reminder.scheduled", times=", ".join(time for time, _ in schedule.times)
         ),
     )

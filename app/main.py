@@ -267,6 +267,40 @@ def _flatten_flags(safety, medicines: list) -> dict:
     }
 
 
+def _status_for(medicines: list) -> str:
+    """``ok`` / ``partial`` / ``manual_required`` from how many boxes resolved."""
+    matched = sum(1 for medicine in medicines if medicine.matched)
+    if matched == len(medicines):
+        return "ok"
+    return "partial" if matched else "manual_required"
+
+
+def _verify_response(
+    medicines: list,
+    safety,
+    language: Language,
+    source,
+    status: str | None = None,
+    image_bytes_received: int = 0,
+) -> VerifyResponse:
+    """Build the verification contract in one place.
+
+    Every endpoint that returns a `VerifyResponse` goes through here, so the
+    localised voice script, the flat flags and the provenance field cannot drift
+    between the photo path, the batch path and manual entry.
+    """
+    return VerifyResponse(
+        extraction_status=status or _status_for(medicines),
+        extraction_source=source,
+        medicines=medicines,
+        safety=safety,
+        disclaimer=i18n.language_text("disclaimer"),
+        language=language,
+        image_bytes_received=image_bytes_received,
+        **_flatten_flags(safety, medicines),
+    )
+
+
 async def _read_upload(upload: UploadFile) -> tuple[bytes, str]:
     """Validate and buffer an upload entirely in memory."""
     content_type = (upload.content_type or "").split(";")[0].strip().lower()
@@ -313,15 +347,13 @@ async def verify_strip(
         safety = clinical.analyse(
             [first], language, paracetamol_taken_today_mg, age_years=age_years
         )
-        return VerifyResponse(
-            extraction_status="manual_required",
-            extraction_source=result.source,
-            medicines=[first],
-            safety=safety,
-            disclaimer=i18n.language_text("disclaimer"),
-            language=language,
+        return _verify_response(
+            [first],
+            safety,
+            language,
+            result.source,
+            status="manual_required",
             image_bytes_received=len(data),
-            **_flatten_flags(safety, [first]),
         )
 
     safety = await run_in_threadpool(
@@ -331,15 +363,13 @@ async def verify_strip(
         paracetamol_taken_today_mg,
         age_years=age_years,
     )
-    return VerifyResponse(
-        extraction_status=result.status,  # type: ignore[arg-type]
-        extraction_source=result.source,
-        medicines=result.medicines,
-        safety=safety,
-        disclaimer=i18n.language_text("disclaimer"),
-        language=language,
+    return _verify_response(
+        result.medicines,
+        safety,
+        language,
+        result.source,
+        status=result.status,
         image_bytes_received=len(data),
-        **_flatten_flags(safety, result.medicines),
     )
 
 
@@ -366,16 +396,8 @@ async def verify_medicines(payload: VerifyTextRequest) -> VerifyResponse:
         payload.paracetamol_taken_today_mg or 0.0,
         age_years=payload.age_years,
     )
-    matched = sum(1 for m in medicines if m.matched)
-    status = "ok" if matched == len(medicines) else ("partial" if matched else "manual_required")
-    return VerifyResponse(
-        extraction_status=status,
-        extraction_source=extraction.ExtractionSource.manual,
-        medicines=medicines,
-        safety=safety,
-        disclaimer=i18n.language_text("disclaimer"),
-        language=payload.language,
-        **_flatten_flags(safety, medicines),
+    return _verify_response(
+        medicines, safety, payload.language, extraction.ExtractionSource.manual
     )
 
 

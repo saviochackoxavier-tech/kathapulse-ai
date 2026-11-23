@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 23 November 2026
-**Build audited:** `v1.5.0` (Pass 30: `v1.4.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.6.0` (Pass 31: `v1.5.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -705,6 +705,80 @@ tests are the same functions the browser executes.
   granted path is guarded by `permission === "granted"` but was not observed.
 * The panel and banner were verified in a DOM (visibility, copy, order, cancel,
   language switch), **not visually reviewed in a browser** this pass.
+
+---
+
+## 17. Pass 32 — consolidation, shared builders and a calmer result screen
+
+No new feature. This pass removed the duplication that six feature passes had
+left behind, and reordered the result screen so the warning list is not pushed
+below the fold on a small phone.
+
+### 17.1 What was duplicated, and what owns it now
+
+| Fact | Before | After |
+|---|---|---|
+| Paracetamol ceiling | `clinical.PARACETAMOL_DAILY_MAX_MG` **and** `audio_reminders.PARACETAMOL_DAILY_MAX_MG`, both `4000.0` | `app.clinical` only; `audio_reminders` reads `clinical.PARACETAMOL_DAILY_MAX_MG` and `clinical.PARACETAMOL_CANONICAL` |
+| Tri-lingual bundle | `audio_reminders._text()` re-implemented `i18n.language_text()` | `i18n.language_text()` |
+| `VerifyResponse` | built by hand in three places with five repeated kwargs | `_verify_response()` + `_status_for()` |
+| Finding card DOM | 25 duplicated lines (`renderBatchBanner`, `renderResult`) | `findingNode(finding, prefix, options)` |
+| Language fallback | `text[language] \|\| text.en` in four places | `localised(text)` |
+| Card CSS | `.finding-*` and `.batch-item-*` written out twice | one grouped rule set |
+
+A side benefit of sharing the card builder: the recall banner's severity badge
+now takes its crimson/amber colours from the same rules as a finding, which it
+did not before (it rendered a slate badge inside a crimson banner).
+
+### 17.2 Result-screen order
+
+Recall banner → verdict → provenance → LISTEN/script → live countdown → findings
+→ detected medicines → reminder form → disclaimer. The reminder **form** moved
+below the findings; the live countdown stayed beside the verdict.
+
+### 17.3 320px pass
+
+`main` gutters 16px → 12px, verdict padding and icon trimmed, reminder controls
+and the countdown's cancel button stack to full width (`flex: 1 1 100%`), and
+finding titles/messages gain `overflow-wrap: break-word` for unbreakable
+Malayalam molecule names. Touch targets stay at the 44px `--tap` minimum.
+
+### 17.4 Verification
+
+```
+$ ./.venv/bin/pytest -o addopts="" -q
+332 passed, 1 warning in 5.49s
+$ cd tests/js
+state 18/18 · retry 4/4 · exif-scrub 15/15 · audio-pack 10/10 · audiopack 17/17
+presets 9/9 · recall 13/13 · groundtruth 12/12 · reminders 16/16   (114 frontend checks)
+```
+
+**No test file changed in this pass.** That is the point: identical counts, same
+assertions, so a behaviour change would have been caught rather than absorbed
+into a rewritten expectation. CSS was checked for brace balance and duplicate
+selector blocks (none), and `node --check` was run on the changed script.
+
+### 17.5 Scorecard against the Pass 32 checklist
+
+| Criterion | Verdict |
+|---|---|
+| Architectural cleanliness | **Pass** — one owner per fact (limits, text bundles, response shape, card DOM, card CSS); zero duplicate CSS selectors; no unused helper left behind |
+| UI scannability | **Pass (with a caveat)** — warnings now sit directly under the verdict, the scheduling form moved to the bottom, long names wrap, and the 320px rules stack the reminder controls. Verified in the DOM; **not** visually measured at 320px (no browser engine here) |
+| Zero disk persistence | **Pass** — untouched: `io.BytesIO`/`bytes` only, no `tempfile` in the package, `processed_in_memory: true` still asserted, empty temp dir after every path |
+| Zero regressions | **Pass** — 332 backend + 114 frontend, 0 failures, 0 skipped, 0 test edits |
+| Production polish | **9/10** |
+
+### Honest limits of this pass
+
+* The 320px behaviour is **reasoned, not seen**. jsdom does not compute layout, and
+  this sandbox has no Chromium, so "spacious and well-balanced" is a design
+  argument backed by DOM assertions, not a screenshot. A reviewer with a phone
+  should confirm the reminder row and the verdict on a 320px viewport.
+* The refactor is deliberately conservative: no module was split into a package,
+  because a cleaner tree that changes runtime behaviour is a worse trade than a
+  small, verified file. `static/js/app.js` is still one orchestration file
+  (1115 lines) with clearly marked sections; splitting it further is a refactor
+  worth doing with a browser available.
+* Nothing was pushed, so CI remains locally executed (nine suites, all green).
 
 ---
 

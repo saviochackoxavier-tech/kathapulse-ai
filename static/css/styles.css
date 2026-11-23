@@ -509,20 +509,8 @@ textarea::placeholder { color: #6b7d99; }
 .batch-banner.critical .batch-banner-label { color: #ffa3b3; }
 .batch-banner.warning .batch-banner-label { color: var(--amber-text); }
 .batch-banner-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
-.batch-item-head {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 7px; flex-wrap: wrap;
-}
-.batch-item-title { margin: 0; font-size: 21px; font-weight: 900; line-height: 1.3; }
-.batch-banner.critical .batch-item-title { color: var(--crimson-text); }
-.batch-banner.warning .batch-item-title { color: var(--amber-text); }
-.batch-item-message { margin: 0 0 10px; font-size: 18px; color: var(--text); }
-.batch-item-action {
-  margin: 0; font-size: 18px; font-weight: 800;
-  display: flex; gap: 8px; align-items: flex-start;
-}
-.batch-item-action::before { content: "→"; font-weight: 900; color: var(--crimson); }
-.batch-banner.warning .batch-item-action::before { color: var(--amber); }
+/* `.batch-item-*` shares its card styling with `.finding-*` further down: one
+   design, two lists. Only the banner-specific colours live here. */
 
 /* Optional pharmacy fields on the manual-entry path. */
 .batch-fields { display: grid; gap: 10px; margin: 0 0 12px; }
@@ -541,6 +529,10 @@ textarea::placeholder { color: #6b7d99; }
 .batch-field input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
 /* -------------------------------------------------------------- findings */
+
+/* One card design, used by the findings list (`.finding-*`) and by the recall
+   banner above the verdict (`.batch-item-*`), so a warning reads identically
+   wherever it appears and the styling exists once. */
 
 .findings { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 12px; }
 
@@ -567,7 +559,10 @@ textarea::placeholder { color: #6b7d99; }
   background: #04231a;
 }
 
-.finding-head { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; flex-wrap: wrap; }
+.finding-head, .batch-item-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 7px; flex-wrap: wrap;
+}
 .finding-badge {
   flex: 0 0 auto;
   font-size: 12px; font-weight: 900; letter-spacing: 1px;
@@ -575,23 +570,38 @@ textarea::placeholder { color: #6b7d99; }
   padding: 4px 10px; border-radius: 6px;
   color: var(--void); background: var(--slate);
 }
-.finding.critical .finding-badge { background: var(--crimson); color: #1a0207; }
-.finding.warning .finding-badge { background: var(--amber); color: #1a1200; }
+.finding.critical .finding-badge,
+.batch-banner.critical .finding-badge { background: var(--crimson); color: #1a0207; }
+.finding.warning .finding-badge,
+.batch-banner.warning .finding-badge { background: var(--amber); color: #1a1200; }
 .finding.info .finding-badge { background: var(--emerald); color: #002015; }
 
-.finding-title { margin: 0; font-size: 21px; font-weight: 900; line-height: 1.3; }
-.finding.critical .finding-title { color: var(--crimson-text); }
-.finding.warning .finding-title { color: var(--amber-text); }
+.finding-title, .batch-item-title {
+  margin: 0; font-size: 21px; font-weight: 900; line-height: 1.3;
+  /* Malayalam molecule names have no break opportunity; a 320px phone needs one. */
+  overflow-wrap: break-word;
+}
+.finding.critical .finding-title,
+.batch-banner.critical .batch-item-title { color: var(--crimson-text); }
+.finding.warning .finding-title,
+.batch-banner.warning .batch-item-title { color: var(--amber-text); }
 .finding.info .finding-title { color: #c9ffe9; }
 
-.finding-message { margin: 0 0 10px; font-size: 18px; color: var(--text); }
-.finding-action {
+.finding-message, .batch-item-message {
+  margin: 0 0 10px; font-size: 18px; color: var(--text);
+  overflow-wrap: break-word;
+}
+.finding-action, .batch-item-action {
   margin: 0; font-size: 18px; font-weight: 800;
   display: flex; gap: 8px; align-items: flex-start;
 }
-.finding-action::before { content: "→"; font-weight: 900; color: var(--emerald); }
-.finding.critical .finding-action::before { color: var(--crimson); }
-.finding.warning .finding-action::before { color: var(--amber); }
+.finding-action::before, .batch-item-action::before {
+  content: "→"; font-weight: 900; color: var(--emerald);
+}
+.finding.critical .finding-action::before,
+.batch-banner.critical .batch-item-action::before { color: var(--crimson); }
+.finding.warning .finding-action::before,
+.batch-banner.warning .batch-item-action::before { color: var(--amber); }
 
 .anchors { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .anchor-chip {
@@ -642,9 +652,17 @@ textarea::placeholder { color: #6b7d99; }
   }
 }
 
-/* Low-end / small screens: keep the type, drop the decoration. */
+/* Low-end / small screens: keep the type, drop the decoration.
+   320px is the design floor (a Redmi 9A in a Kerala pharmacy), so the gutters
+   narrow and the reminder controls stack instead of squeezing into one row. */
 @media (max-width: 360px) {
   body { font-size: 17px; }
+  main { padding: 12px; }
+  .card { padding: 14px; }
+  .verdict { padding: 14px 12px; gap: 10px; }
+  .verdict-icon { font-size: 30px; }
   .verdict-label { font-size: 22px; }
   .scan-frame { display: none; }
+  .reminder-row > * { flex: 1 1 100%; }
+  .reminder-banner .btn { flex: 1 1 100%; }
 }

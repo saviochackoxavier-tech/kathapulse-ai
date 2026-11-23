@@ -425,6 +425,64 @@ languages.
 | `static/sw.js` | Precache `reminders.js` and `knowledge.json`; cache `kathapulse-v7` → `v8` |
 | Tests | `tests/test_audio_reminders.py` (67) and `tests/js/reminders.test.mjs` (16) |
 
+## Architecture and consolidation (Pass 32)
+
+By Pass 31 the app had six feature passes bolted onto one another, and the seams
+showed: the same clinical limit was written down twice, the same card was built
+twice in JavaScript, and the result screen had grown so tall that the warnings
+sat below the fold on a small phone. Pass 32 removes those seams without adding
+a feature. Nothing here changes a warning, a verdict or a wire field — the whole
+suite is the regression test, and it is green with **no test edits**.
+
+### One owner per fact
+
+| Fact | Was | Is |
+|---|---|---|
+| Paracetamol ceiling | `clinical.PARACETAMOL_DAILY_MAX_MG = 4000.0` **and** `audio_reminders.PARACETAMOL_DAILY_MAX_MG = 4000.0` | `app.clinical` only; the reminder module reads it and uses `clinical.PARACETAMOL_CANONICAL` instead of a string literal |
+| Tri-lingual bundle | `audio_reminders._text()` rebuilt `i18n.language_text()` | `i18n.language_text()`, one implementation |
+| `VerifyResponse` body | hand-built in `/verify-strip` (twice) and `/verify-medicines` | `_verify_response()` + `_status_for()` in `app/main.py` |
+| Finding card DOM | 25 duplicated lines in `renderBatchBanner` and `renderResult` | `findingNode(finding, prefix, options)`; `.finding-*` and `.batch-item-*` share it |
+| Text fallback | `text[language] \|\| text.en` in four places | `localised(text)` |
+| Finding card CSS | `.finding-*` and `.batch-item-*` written out twice | one rule set with grouped selectors |
+
+Measured effect: `app/main.py` 491 → 513 lines (the builders plus their
+docstrings), `static/js/app.js` 1117 → 1115, `static/css/styles.css` 650 → 668
+(shared selectors, added small-screen rules), and **zero duplicate CSS selector
+blocks** (checked programmatically). Code volume was never the goal; the goal was
+one definition per fact, so the next pass cannot fix a rule in one place and
+leave a stale copy in another.
+
+### The result screen, top to bottom
+
+The order now matches what a patient needs first:
+
+1. recall / expiry banner (why not to hand the box over)
+2. verdict
+3. provenance line, LISTEN, and the always-visible script
+4. live reminder countdown, if one is running
+5. findings
+6. detected medicines (collapsed)
+7. the dose-reminder form, then the disclaimer
+
+The reminder **form** moved below the findings: it is a next step, not a warning,
+and it was pushing the actual safety list off a 320px screen.
+
+### 320px decisions
+
+`@media (max-width: 360px)` now narrows `main` to 12px gutters, trims the verdict
+padding and icon, and stacks the reminder select/button and the countdown's
+cancel button to full width, so nothing is squeezed into a 150px tap target.
+Long Malayalam molecule names break inside finding titles and messages
+(`overflow-wrap: break-word`) — the one place this build accepts a mid-word break,
+because a `320px` column cannot fit `ഹൈഡ്രോക്ലോറോത്തയാസൈഡ്` whole and sideways
+scrolling is worse.
+
+**Not verified:** the layout was reasoned about and the CSS is brace-balanced and
+free of duplicate selectors, but **no screenshot or pixel measurement at 320px was
+taken** — this sandbox has no browser engine beyond jsdom, which does not lay out.
+The copy, ordering, visibility and classes are asserted by the DOM suites; the
+spacing is not.
+
 ## Tests
 
 ```bash

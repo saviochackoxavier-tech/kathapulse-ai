@@ -287,6 +287,70 @@
   // Rendering the result
   // ---------------------------------------------------------------------
 
+  /** A backend text object, in the language on screen. */
+  function localised(text) {
+    if (!text) return "";
+    return text[language] || text.en || "";
+  }
+
+  /**
+   * One card for one finding.
+   *
+   * The recall banner and the findings list render the same five elements with
+   * different class prefixes (`batch-item` / `finding`), so they share a
+   * builder: a warning cannot look or read differently depending on which list
+   * it lands in, and there is one place to change if the card design does.
+   */
+  function findingNode(finding, prefix, options) {
+    const settings = options || {};
+    const item = document.createElement("li");
+    item.className = [prefix, settings.severity ? finding.severity : "", settings.extraClass || ""]
+      .filter(Boolean)
+      .join(" ");
+
+    const head = document.createElement("div");
+    head.className = prefix + "-head";
+
+    const badge = document.createElement("span");
+    badge.className = "finding-badge";
+    badge.textContent = (t().badge[finding.severity] || finding.severity).toUpperCase();
+
+    const title = document.createElement("h3");
+    title.className = prefix + "-title";
+    title.textContent = localised(finding.title);
+
+    head.appendChild(badge);
+    head.appendChild(title);
+
+    const message = document.createElement("p");
+    message.className = prefix + "-message";
+    message.textContent = localised(finding.message);
+
+    const action = document.createElement("p");
+    action.className = prefix + "-action";
+    action.textContent = localised(finding.action);
+
+    item.appendChild(head);
+    item.appendChild(message);
+    item.appendChild(action);
+
+    if (settings.anchors && finding.anchors && finding.anchors.length) {
+      const chipRow = document.createElement("div");
+      chipRow.className = "anchors";
+      finding.anchors.forEach((anchor) => {
+        const chip = document.createElement("span");
+        chip.className = "anchor-chip";
+        const entry = settings.names && settings.names[anchor];
+        // LASA anchors are printed labels, not molecules — show them verbatim.
+        chip.textContent = entry ? entry[language] || entry.en : anchor;
+        chipRow.appendChild(chip);
+      });
+      item.appendChild(chipRow);
+    }
+
+    return item;
+  }
+
   /**
    * Render the batch/expiry banner.
    *
@@ -308,35 +372,9 @@
     els.batchBannerLabel.textContent = t().batchLabel;
 
     findings.forEach((finding) => {
-      const item = document.createElement("li");
-      item.className = "batch-item " + (BATCH_CODES[finding.code] || "");
-
-      const head = document.createElement("div");
-      head.className = "batch-item-head";
-
-      const badge = document.createElement("span");
-      badge.className = "finding-badge";
-      badge.textContent = (t().badge[finding.severity] || finding.severity).toUpperCase();
-
-      const title = document.createElement("h3");
-      title.className = "batch-item-title";
-      title.textContent = finding.title[language] || finding.title.en;
-
-      head.appendChild(badge);
-      head.appendChild(title);
-
-      const message = document.createElement("p");
-      message.className = "batch-item-message";
-      message.textContent = finding.message[language] || finding.message.en;
-
-      const action = document.createElement("p");
-      action.className = "batch-item-action";
-      action.textContent = finding.action[language] || finding.action.en;
-
-      item.appendChild(head);
-      item.appendChild(message);
-      item.appendChild(action);
-      els.batchBannerList.appendChild(item);
+      els.batchBannerList.appendChild(
+        findingNode(finding, "batch-item", { extraClass: BATCH_CODES[finding.code] })
+      );
     });
   }
 
@@ -372,52 +410,13 @@
     renderBatchBanner(allFindings.filter((finding) => BATCH_CODES[finding.code]));
 
     els.findings.textContent = "";
-    allFindings.filter((finding) => !BATCH_CODES[finding.code]).forEach((finding) => {
-      const item = document.createElement("li");
-      item.className = "finding " + finding.severity;
-
-      const head = document.createElement("div");
-      head.className = "finding-head";
-
-      const badge = document.createElement("span");
-      badge.className = "finding-badge";
-      badge.textContent = (t().badge[finding.severity] || finding.severity).toUpperCase();
-
-      const title = document.createElement("h3");
-      title.className = "finding-title";
-      title.textContent = finding.title[language] || finding.title.en;
-
-      head.appendChild(badge);
-      head.appendChild(title);
-
-      const message = document.createElement("p");
-      message.className = "finding-message";
-      message.textContent = finding.message[language] || finding.message.en;
-
-      const action = document.createElement("p");
-      action.className = "finding-action";
-      action.textContent = finding.action[language] || finding.action.en;
-
-      item.appendChild(head);
-      item.appendChild(message);
-      item.appendChild(action);
-
-      if (finding.anchors && finding.anchors.length) {
-        const chipRow = document.createElement("div");
-        chipRow.className = "anchors";
-        finding.anchors.forEach((anchor) => {
-          const chip = document.createElement("span");
-          chip.className = "anchor-chip";
-          const entry = names[anchor];
-          // LASA anchors are printed labels, not molecules — show them verbatim.
-          chip.textContent = entry ? entry[language] || entry.en : anchor;
-          chipRow.appendChild(chip);
-        });
-        item.appendChild(chipRow);
-      }
-
-      els.findings.appendChild(item);
-    });
+    allFindings
+      .filter((finding) => !BATCH_CODES[finding.code])
+      .forEach((finding) => {
+        els.findings.appendChild(
+          findingNode(finding, "finding", { severity: true, anchors: true, names })
+        );
+      });
 
     // Detected medicines
     els.matchedList.textContent = "";
@@ -475,8 +474,7 @@
     }
     renderReminderBanner();
 
-    els.disclaimer.textContent =
-      (payload.disclaimer && (payload.disclaimer[language] || payload.disclaimer.en)) || "";
+    els.disclaimer.textContent = localised(payload.disclaimer);
     els.memoryProof.textContent = t().memory;
 
     // The script is always rendered: this is the offline fallback when the
