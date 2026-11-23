@@ -376,13 +376,63 @@ localised, spoken, and gets its own audio-pack slot (`ml:AGE_WARNING`).
 writes. `tests/test_knowledge_base.py` proves that with a provider that raises
 `ConnectError` on every call.
 
+## Dose reminders (Pass 31)
+
+The scan tells you what is wrong with the box; the reminder tells you when to
+take it. A patient who cannot read the prescription gets one tap: pick how many
+times a day, press **Set**, and the app speaks and posts the dose times in the
+language already selected.
+
+**The server does not schedule anything.** `POST /reminders` parses the typed
+schedule (`1-0-1`, `0-0-1`, `twice daily`, `BD`, `TDS`, `every 8 hours`), applies
+the same clinical strengths the scan uses, and returns a derived plan: clock
+times, a part-of-day label, per-slot speech and a full spoken script in en/ml/hi.
+The browser holds the plan in a variable and runs a 15-second `setInterval` — no
+storage, no id, no push service, no database table. It is lost when the tab
+closes, and the UI says so instead of pretending:
+
+> 08:00, 21:00-ന് ഓർമ്മപ്പെടുത്തൽ വെച്ചു. ഈ പേജ് തുറന്നിരിക്കുമ്പോൾ മാത്രം പ്രവർത്തിക്കും.
+
+**Refusals instead of guesses.** The parser returns a reason, not a schedule, for
+`SOS`/`as needed`/`PRN` (`as_needed`: take it when the doctor said), for anything
+it cannot read (`unsupported`, with the `1-0-1` example), for more than four
+tablets in one slot (`too_many`), and for a schedule that would push paracetamol
+past 4000 mg/day (`paracetamol_limit`). The last one matters: `3-3-3` of Dolo 650
+is 5850 mg and is refused with the number in the sentence, while `2-2-2` (3900 mg)
+is allowed — the reminder engine cannot contradict the clinical rules.
+
+**Countdown banner.** A scheduled plan paints a green banner above the findings —
+"അടുത്ത ഡോസ് 21:00 · 1 മണിക്കൂർ 0 മിനിറ്റ് കഴിഞ്ഞ്" — with a **Cancel** button. When
+the clock reaches a slot the app speaks the dose text and, if the browser allows
+notifications, posts a local `Notification` (no server, no key, no icon CDN). A
+browser without `Notification` still gets the spoken reminder; a browser without
+both still gets the banner text.
+
+**Ownership.** The plan belongs to the scan on screen: scanning a different set
+of medicines drops it, and switching language re-renders the banner in that
+language from the same in-memory plan. Nothing here is a prescription — the
+spoken script ends with "this is a reminder, not a prescription" in all three
+languages.
+
+| Layer | Change |
+|---|---|
+| `app/audio_reminders.py` **(new)** | `parse_schedule()`, `slot_for_time()`, the paracetamol-daily check, `build_plan()`, and the request/response models |
+| `app/main.py` | `POST /reminders` (thread-pool, `no-store`) |
+| `app/i18n.py` | 17 new keys: intro, four parts of day, dose sentence, singular/plural units, caveat, confirmation, and the four refusal reasons |
+| `static/js/reminders.js` **(new)** | `nextDose`, `formatLeft`, `isDue` — pure date arithmetic, unit-tested in Node |
+| `static/js/app.js` | Panel visibility, `POST /reminders`, banner, 15-second clock, `Notification`, cancel, per-scan invalidation |
+| `static/index.html`, `static/css/styles.css` | Reminder panel and countdown banner, 44 px targets, high-contrast emerald |
+| `static/sw.js` | Precache `reminders.js` and `knowledge.json`; cache `kathapulse-v7` → `v8` |
+| Tests | `tests/test_audio_reminders.py` (67) and `tests/js/reminders.test.mjs` (16) |
+
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 265 backend: rules, LASA, accuracy, vision, failover, batch audit, knowledge base, e2e, offline/relay/hardening/ratelimit/audio
+./.venv/bin/pytest                 # 332 backend: rules, LASA, accuracy, vision, failover, batch audit, knowledge base, dose reminders, e2e, offline/relay/hardening/ratelimit/audio
 ./.venv/bin/pytest tests/test_failover.py   # 16 dual-key rotation checks on their own
 ./.venv/bin/pytest tests/test_recall.py     # 56 recall / expiry / cold-chain audit checks on their own
 ./.venv/bin/pytest tests/test_knowledge_base.py  # 59 ground-truth matching, cautions, age bands and fallback checks
+./.venv/bin/pytest tests/test_audio_reminders.py # 67 schedule parsing, translations, paracetamol ceiling, zero-persistence checks
 cd tests/js && npm ci && npm test        # 15 EXIF-scrub checks (npm ci: the lockfile is committed)
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
@@ -391,6 +441,7 @@ cd tests/js && node audio-pack.test.mjs  # 10 audio-pack loader, script and fall
 cd tests/js && node audiopack.test.mjs   # 17 DOM-level checks: app.js drives playScript, or falls back to speech in en/ml/hi
 cd tests/js && node recall.test.mjs      # 13 DOM-level checks: recall/expiry banner, ml+hi copy, pack slot per code, typed batch
 cd tests/js && node groundtruth.test.mjs # 12 DOM-level checks: verified badge in ml/hi, age warning + its clip, age sent request-level
+cd tests/js && node reminders.test.mjs   # 16 checks: the clock arithmetic, panel, POST body, countdown banner, refusals, cancel
 # Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
 # POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
 ```
@@ -409,7 +460,7 @@ two independent jobs so a backend failure does not hide a frontend one:
 | Job | Steps |
 |---|---|
 | **Backend** | Python 3.12 → `pip install -r requirements.txt` → `pytest` |
-| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the eight Node suites, one step each |
+| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the nine Node suites, one step each |
 
 The preset suite is the reason CI starts the server at all: it is the only test
 that talks to the real API. The app is started with **no** vision keys, so CI
@@ -423,7 +474,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **265 passed** (206 + 59 knowledge-base checks) |
+| Backend suite | **332 passed** (265 + 67 reminder checks) |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
@@ -431,6 +482,7 @@ Measured results from this build:
 | Audio pack wiring, real DOM (Passes 24-25) | **17/17 checks passed** — clips present → `playScript` runs intro/findings/outro and the device voice stays silent; clips missing → nothing half-plays and the device voice takes over |
 | Live demo presets, real API + real DOM | **9/9 checks passed** — Telma pair, Dolo+Crocin and Amaryl each render the expected card (32 ms on the cold first call, then 7 ms and 4 ms), and the speech handoff carries the same Malayalam string the API returned |
 | Batch recall & expiry banner, real API + real DOM | **13/13 checks passed** — a recalled, expired batch renders a crimson `role="alert"` banner above the verdict in Malayalam and Hindi, is not repeated in the findings list, gets one audio clip per code, and the preset POSTs `batch_no`/`expiry`; a near-expiry box renders the same banner in amber |
+| Dose reminders, pure clock + real DOM | **16/16 checks passed** — the next slot rolls to tomorrow when today's has passed, `SET` posts only `{name}` per medicine, a scheduled plan paints a localised countdown banner, an SOS refusal paints none, cancel clears it, and a new scan cannot inherit the old plan |
 | Batch audit engine | **56/56 checks passed** — 15 printed expiry shapes parsed, 9 refused as unreadable, recall matching by molecule/brand/batch prefix, no claim without a batch, cold-chain flag, tri-lingual copy, deterministic date injection, nothing written to disk |
 | Ground-truth knowledge base | **59/59 checks passed** — 256 indexed names, every curated molecule exists in the taxonomy, `Glycomet GP` → metformin + glimepiride while the alias table answers one, OCR slips resolved, nonsense never matched, age bands only where a label states one, provider `ConnectError` → `200`/`manual_required`, no disk writes |
 | Verified badge + age rule in a DOM | **12/12 checks passed** — badge shown only for a ground-truth match, Malayalam and Hindi copy, age warning rendered amber and spoken, `AGE_WARNING` clip requested, age sent as a request field (never inside a medicine) |

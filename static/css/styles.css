@@ -419,6 +419,47 @@ textarea::placeholder { color: #6b7d99; }
 
 .spoken-script { margin: 0; font-size: 18px; line-height: 1.55; color: var(--text); }
 
+/* ---------------------------------------------------------- dose reminders */
+
+.reminder-panel {
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--emerald-deep);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 0 0 14px;
+  background: var(--panel-2);
+}
+.reminder-label {
+  display: block; margin-bottom: 10px;
+  font-size: 15px; font-weight: 900; letter-spacing: 0.6px;
+  text-transform: uppercase; color: #9df5cf;
+}
+.reminder-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.reminder-row select {
+  flex: 1 1 160px;
+  min-height: var(--tap);
+  padding: 8px 10px;
+  font-family: inherit; font-size: 17px; font-weight: 700;
+  color: var(--text); background: #0a121c;
+  border: 2px solid var(--line); border-radius: 10px;
+}
+.reminder-row .btn { flex: 0 1 150px; }
+.reminder-help { margin: 10px 0 0; font-size: 15px; color: var(--text-dim); }
+.reminder-msg { margin: 10px 0 0; font-size: 17px; font-weight: 700; color: var(--text); }
+
+.reminder-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  justify-content: space-between;
+  border: 2px solid rgba(16, 185, 129, 0.5);
+  border-left: 8px solid var(--emerald);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 14px;
+  background: #04231a;
+}
+.reminder-next { margin: 0; font-size: 19px; font-weight: 800; color: #c9ffe9; }
+.reminder-banner .btn { flex: 0 0 auto; }
+
 /* ------------------------------------------------ ground-truth provenance */
 
 /* A quiet emerald line, not a banner: verification is reassurance, not a

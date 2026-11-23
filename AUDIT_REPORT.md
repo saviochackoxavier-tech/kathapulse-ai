@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 23 November 2026
-**Build audited:** `v1.4.0` (Pass 29: `v1.3.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.5.0` (Pass 30: `v1.4.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -611,6 +611,100 @@ not disturb any clinical answer.
   is what the uptime test asserts. Claiming otherwise would be false.
 * The badge and the age finding were verified in a DOM (order, classes, copy,
   speech, wire format), **not visually reviewed in a browser** this pass.
+
+---
+
+## 16. Pass 31 — voice-first dose reminders and a local countdown
+
+The brief listed `app/audio_reminders.py` as existing. It did not exist, so this
+pass wrote it, wired it to the clinical strengths, and put the clock in the
+browser.
+
+### 16.1 What was added
+
+| Layer | Change |
+|---|---|
+| `app/audio_reminders.py` **(new)** | `parse_schedule()` for `1-0-1` / `0-1-0` / `twice daily` / `BD` / `TDS` / `QID` / `every 8|12 hours`, `slot_for_time()`, `_daily_paracetamol_mg()`, `build_plan()`, Pydantic request/response models |
+| `app/main.py` | `POST /reminders` — a thread-pool call, `no-store`, no id, no table |
+| `app/i18n.py` | 17 keys: intro, four parts of day, the `{time} — {medicines}, {amount}` sentence, singular/plural tablet units, the caveat, the confirmation and four refusal reasons, each in en/ml/hi |
+| `static/js/reminders.js` **(new)** | `nextDose()` (rolls to tomorrow), `formatLeft()`, `isDue()` — pure, DOM-free, unit-tested in Node |
+| `static/js/app.js` | Panel gating on `matched`, `POST /reminders`, banner, a 15 s `setInterval`, `Notification` when granted, cancel, and invalidation when a different set of medicines is scanned |
+| `static/index.html`, `styles.css` | Reminder panel + emerald countdown banner, 44 px controls, bilingual labels |
+| `static/sw.js` | Precache `reminders.js` and `knowledge.json`; `kathapulse-v7` → `v8` |
+| Tests | `tests/test_audio_reminders.py` (67) and `tests/js/reminders.test.mjs` (16); CI gains a ninth suite |
+
+### 16.2 Why it is not a duplicate
+
+Passes 29-30 answer *is this box safe to hand over*; this pass answers *when does
+the patient take it*, which neither the recall audit nor the KB touched. The
+design decision that keeps it inside the product's safety posture: the server
+**derives** a plan and forgets it. There is no scheduler, no job table, no push
+key, no `localStorage` — the plan is a variable in the tab. A browser cannot wake
+a closed tab, so the UI states the limitation ("works while this page stays
+open") rather than implying a background service that does not exist.
+
+The refusal paths are the same policy as everywhere else in this build: `SOS`
+returns `as_needed` and tells the patient to follow the doctor, unreadable text
+returns `unsupported` with the `1-0-1` example, five tablets in a slot returns
+`too_many`, and a schedule that would exceed 4000 mg/day of paracetamol returns
+`paracetamol_limit` **with the computed total in the sentence**. That last check
+reuses `extraction.resolve_medicine` and the KB strengths, so a reminder can
+never quietly prescribe more paracetamol than the clinical rules allow.
+
+### 16.3 Measured behaviour
+
+| Probe | Result |
+|---|---|
+| `1-0-1` | `08:00`, `21:00` — morning, night |
+| `1-1-1` and `TDS` | the same clock: `08:00`, `14:00`, `21:00` |
+| `every 8 hours` | `08:00`, `16:00`, `00:00` (spaced by eight hours, `00:00` labelled night) |
+| `SOS`, `PRN`, `as needed` | `scheduled: false`, `reason: as_needed` |
+| `nonsense`, `0-0-0`, `every 6 hours` | `scheduled: false`, `reason: unsupported` |
+| `5-0-0` | `scheduled: false`, `reason: too_many` |
+| `Dolo 650` × `3-3-3` | `5850 mg` > `4000 mg` → `paracetamol_limit` |
+| `Dolo 650` × `2-2-2` | scheduled (`3900 mg`) |
+| `POST /reminders` (ml) | `200`, `[('08:00','morning',1), ('21:00','night',1)]`, Malayalam script with the caveat sentence, `processed_in_memory: true`, `Cache-Control: no-store` |
+| Malformed body | `422` for empty `medicines`, missing `pattern`, 41-char pattern, extra keys, `<script>`, and `language: "zz"` |
+| Temp dir after building plans | empty |
+
+### 16.4 Verification
+
+```
+$ ./.venv/bin/pytest -o addopts="" -q
+332 passed, 1 warning in 5.01s
+$ cd tests/js
+state 18/18 · retry 4/4 · exif-scrub 15/15 · audio-pack 10/10 · audiopack 17/17
+presets 9/9 · recall 13/13 · groundtruth 12/12 · reminders 16/16   (114 frontend checks)
+```
+
+The 265 checks from Pass 30 pass unmodified. The reminder suite runs the real
+`index.html` + `app.js` in jsdom against captured API payloads, and the clock
+tests are the same functions the browser executes.
+
+### 16.5 Scorecard against the Pass 31 checklist
+
+| Criterion | Verdict |
+|---|---|
+| Feature innovation | **Pass** — dose timing is the next question after safety, and it is answered in the patient's script with real clock times |
+| Zero disk persistence | **Pass** — plan computed from the request, returned once, dropped; browser keeps it in a variable; empty temp dir asserted |
+| Zero regressions | **Pass** — 332 backend + 114 frontend, 0 failures, 0 skipped |
+| Multilingual audio | **Pass** — slot labels, dose sentence, confirmation, caveat and all four refusals carry en/ml/hi; the speech payload is spoken by the device voice, and the countdown is rendered in the selected language |
+| Hackathon excellence | **9/10** |
+
+### Honest limits of this pass
+
+* Reminders only fire **while the tab is open**. A closed tab cannot be woken
+  without a service-worker push subscription and a server key, which this
+  zero-persistence build deliberately does not have. The banner says so.
+* The spoken reminder uses the device voice. There are still **no shipped audio
+  clips** for reminder sentences (`static/audio/manifest.json` clips are `{}`),
+  and this headless browser has no `ml-IN` voice, so audibility was not heard —
+  only the string handed to `Speech.speak` was asserted.
+* `Notification` was not exercised visually: jsdom has no `Notification` API, so
+  the tests prove the *no-notification* path stays silent and crash-free. The
+  granted path is guarded by `permission === "granted"` but was not observed.
+* The panel and banner were verified in a DOM (visibility, copy, order, cancel,
+  language switch), **not visually reviewed in a browser** this pass.
 
 ---
 

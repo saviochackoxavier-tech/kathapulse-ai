@@ -385,6 +385,93 @@ TEXTS: dict[str, dict[str, str]] = {
         "ml": "ഗ്രൗണ്ട് ട്രൂത്ത് ഉറപ്പിച്ചത്",
         "hi": "ग्राउंड-ट्रूथ से सत्यापित",
     },
+    # -- dose reminders ----------------------------------------------------
+    "reminder.intro": {
+        "en": "Dose reminder.",
+        "ml": "ഡോസ് ഓർമ്മപ്പെടുത്തൽ.",
+        "hi": "खुराक की याद।",
+    },
+    "reminder.slot.morning": {
+        "en": "Morning",
+        "ml": "രാവിലെ",
+        "hi": "सुबह",
+    },
+    "reminder.slot.afternoon": {
+        "en": "Afternoon",
+        "ml": "ഉച്ചയ്ക്ക്",
+        "hi": "दोपहर",
+    },
+    "reminder.slot.evening": {
+        "en": "Evening",
+        "ml": "വൈകുന്നേരം",
+        "hi": "शाम",
+    },
+    "reminder.slot.night": {
+        "en": "Night",
+        "ml": "രാത്രി",
+        "hi": "रात",
+    },
+    "reminder.dose": {
+        "en": "{time} — {medicines}, {amount}.",
+        "ml": "{time}-ന് {medicines}, {amount}.",
+        "hi": "{time} बजे {medicines}, {amount}।",
+    },
+    "reminder.units.one": {
+        "en": "1 tablet",
+        "ml": "1 ഗുളിക",
+        "hi": "1 गोली",
+    },
+    "reminder.units.many": {
+        "en": "{count} tablets",
+        "ml": "{count} ഗുളിക",
+        "hi": "{count} गोली",
+    },
+    "reminder.safety": {
+        "en": "This is a reminder, not a prescription. Keep the dose your doctor "
+              "wrote.",
+        "ml": "ഇത് ഒരു ഓർമ്മപ്പെടുത്തൽ മാത്രമാണ്, കുറിപ്പടിയല്ല. ഡോക്ടർ "
+              "എഴുതിയ അളവ് തന്നെ കഴിക്കുക.",
+        "hi": "यह सिर्फ़ याद दिलाने के लिए है, पर्चा नहीं। डॉक्टर की लिखी खुराक "
+              "ही लें।",
+    },
+    "reminder.scheduled": {
+        "en": "Reminders set for {times}. They work while this page stays open.",
+        "ml": "{times}-ന് ഓർമ്മപ്പെടുത്തൽ വെച്ചു. ഈ പേജ് തുറന്നിരിക്കുമ്പോൾ "
+              "മാത്രം പ്രവർത്തിക്കും.",
+        "hi": "{times} बजे के लिए याद सेट हो गई। यह पेज खुला रहने पर ही काम "
+              "करेगी।",
+    },
+    "reminder.as_needed": {
+        "en": "This is an as-needed (SOS) medicine, so no reminder is set. Take it "
+              "only when the doctor said to.",
+        "ml": "ഇത് ആവശ്യമുള്ളപ്പോൾ കഴിക്കേണ്ട മരുന്നാണ് (SOS), അതിനാൽ "
+              "ഓർമ്മപ്പെടുത്തൽ വെക്കുന്നില്ല. ഡോക്ടർ പറഞ്ഞാൽ മാത്രം കഴിക്കുക.",
+        "hi": "यह ज़रूरत पर लेने वाली दवा (SOS) है, इसलिए याद सेट नहीं होती। "
+              "डॉक्टर के कहने पर ही लें।",
+    },
+    "reminder.unsupported": {
+        "en": "That dose pattern could not be read. Write it as 1-0-1 "
+              "(morning-afternoon-night).",
+        "ml": "ഈ അളവ് മനസ്സിലായില്ല. 1-0-1 എന്ന രീതിയിൽ എഴുതുക "
+              "(രാവിലെ-ഉച്ച-രാത്രി).",
+        "hi": "यह खुराक समझ नहीं आई। 1-0-1 की तरह लिखें (सुबह-दोपहर-रात)।",
+    },
+    "reminder.too_many": {
+        "en": "That is more than four tablets in one dose. Confirm the dose with "
+              "the pharmacist.",
+        "ml": "ഒരു ഡോസിൽ നാലിൽ കൂടുതൽ ഗുളിക വരുന്നു. ഫാർമസിസ്റ്റിനോട് അളവ് "
+              "ഉറപ്പിക്കുക.",
+        "hi": "एक बार में चार से ज़्यादा गोलियाँ आ रही हैं। फार्मासिस्ट से खुराक "
+              "पक्की करें।",
+    },
+    "reminder.paracetamol_limit": {
+        "en": "This schedule would give {total} mg of paracetamol a day, above the "
+              "4000 mg limit. Ask the doctor before setting it.",
+        "ml": "ഈ അളവിൽ ദിവസം {total} മില്ലിഗ്രാം പാരാസെറ്റമോൾ ആകും. പരിധി "
+              "4000 മില്ലിഗ്രാം. വെക്കുന്നതിന് മുൻപ് ഡോക്ടറോട് ചോദിക്കുക.",
+        "hi": "इस खुराक से दिन में {total} मिलीग्राम पैरासिटामोल होगी। सीमा 4000 "
+              "मिलीग्राम है। सेट करने से पहले डॉक्टर से पूछें।",
+    },
 }
 
 #: Ground-truth catalogue cautions (``GET /knowledge.json``); advisory text,

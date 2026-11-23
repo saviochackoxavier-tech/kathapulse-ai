@@ -108,6 +108,10 @@ jobs:
         working-directory: tests/js
         run: node groundtruth.test.mjs
 
+      - name: Dose reminder clock and banner
+        working-directory: tests/js
+        run: node reminders.test.mjs
+
       - name: Live demo presets
         working-directory: tests/js
         run: node presets.test.mjs

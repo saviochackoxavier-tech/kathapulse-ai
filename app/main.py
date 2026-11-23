@@ -30,6 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
 from . import (
+    audio_reminders,
     clinical,
     config,
     extraction,
@@ -442,6 +443,18 @@ async def verify_strips_batch(
         image_bytes_received=total_bytes,
         **_flatten_flags(report.combined, [m for strip in baskets for m in strip]),
     )
+
+
+@app.post("/reminders", response_model=audio_reminders.ReminderResponse)
+async def schedule_reminders(
+    payload: audio_reminders.ReminderRequest,
+) -> audio_reminders.ReminderResponse:
+    """Derive a dose-reminder plan from a schedule the user typed.
+
+    Nothing is stored: the plan is computed from the request, returned once, and
+    dropped. The browser schedules the times on the patient's own device.
+    """
+    return await run_in_threadpool(audio_reminders.build_plan, payload)
 
 
 @app.websocket("/ws/relay/{room_id}")

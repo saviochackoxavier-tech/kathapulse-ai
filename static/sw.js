@@ -18,7 +18,7 @@
  * any asset change so the old copy is dropped on activate.
  */
 
-const CACHE_VERSION = "kathapulse-v7";
+const CACHE_VERSION = "kathapulse-v8";
 const SHELL_URL = "/";
 const PRECACHE = [
   SHELL_URL,
@@ -27,10 +27,12 @@ const PRECACHE = [
   "/static/js/capture.js",
   "/static/js/speech.js",
   "/static/js/audio-pack.js",
+  "/static/js/reminders.js",
   "/static/js/app.js",
   "/static/favicon.svg",
   "/static/audio/manifest.json",
   "/taxonomy.json",
+  "/knowledge.json",
 ];
 
 self.addEventListener("install", (event) => {

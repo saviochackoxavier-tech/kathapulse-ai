@@ -17,6 +17,13 @@
   const State = window.KathaPulseState;
   const Capture = window.KathaPulseCapture;
   const Speech = window.KathaPulseSpeech;
+  // A cached bundle may predate reminders.js; degrade to "no clock" rather than
+  // throwing inside the render path.
+  const Reminders = window.KathaPulseReminders || {
+    nextDose: () => null,
+    formatLeft: () => "",
+    isDue: () => false,
+  };
 
   /** Server budget. A low-end Android on 3G needs headroom, but not forever. */
   const REQUEST_TIMEOUT_MS = 20000;
@@ -63,6 +70,14 @@
     ageInput: document.getElementById("age-input"),
     gtBadge: document.getElementById("gt-badge"),
     gtText: document.getElementById("gt-text"),
+    reminderPanel: document.getElementById("reminder-panel"),
+    pattern: document.getElementById("pattern"),
+    scheduleBtn: document.getElementById("schedule"),
+    reminderHelp: document.getElementById("reminder-help"),
+    reminderMsg: document.getElementById("reminder-msg"),
+    reminderBanner: document.getElementById("reminder-banner"),
+    reminderNext: document.getElementById("reminder-next"),
+    cancelReminderBtn: document.getElementById("cancel-reminder"),
   };
 
   let language = "ml";
@@ -100,6 +115,15 @@
       errorTitle: "സാങ്കേതിക തകരാർ",
       batchLabel: "ബാച്ച്, കാലഹരണ പരിശോധന",
       groundTruth: "ഗ്രൗണ്ട് ട്രൂത്ത് ഉറപ്പിച്ചത് · verified locally",
+      reminder: {
+        title: "ഡോസ് ഓർമ്മപ്പെടുത്തൽ",
+        help:
+          "കുറിപ്പടിയിലെ നേരങ്ങൾ തിരഞ്ഞെടുക്കുക. ഈ പേജ് തുറന്നിരിക്കുമ്പോൾ മാത്രം ഓർമ്മപ്പെടുത്തൽ പ്രവർത്തിക്കും.",
+        next: (time, left) => `അടുത്ത ഡോസ് ${time} · ${left} കഴിഞ്ഞ്`,
+        due: (time) => `${time} ആയി — ഡോസ് സമയമായി.`,
+        h: " മണിക്കൂർ",
+        m: " മിനിറ്റ്",
+      },
     },
     hi: {
       verdict: {
@@ -127,6 +151,15 @@
       errorTitle: "तकनीकी गड़बड़ी",
       batchLabel: "बैच और एक्सपायरी जाँच",
       groundTruth: "ग्राउंड-ट्रूथ से सत्यापित · verified locally",
+      reminder: {
+        title: "खुराक की याद",
+        help:
+          "पर्चे के समय चुनें। यह पेज खुला रहने पर ही याद चलेगी।",
+        next: (time, left) => `अगली खुराक ${time} · ${left} बाद`,
+        due: (time) => `${time} हो गया — खुराक का समय।`,
+        h: " घंटे",
+        m: " मिनट",
+      },
     },
     en: {
       verdict: {
@@ -154,6 +187,15 @@
       errorTitle: "Something went wrong",
       batchLabel: "Batch & expiry check",
       groundTruth: "Ground-Truth verified · offline database",
+      reminder: {
+        title: "Dose reminder",
+        help:
+          "Choose the times from the prescription. The reminder runs while this page stays open.",
+        next: (time, left) => `Next dose ${time} · in ${left}`,
+        due: (time) => `${time} — time for your dose.`,
+        h: " h",
+        m: " min",
+      },
     },
   };
 
@@ -414,6 +456,25 @@
       els.gtText.textContent = verified ? t().groundTruth : "";
     }
 
+    // Dose reminders belong to this scan: a different set of medicines drops the
+    // previous in-memory plan, so a stale reminder can never name the wrong drug.
+    if (reminderPlan && reminderLabels !== reminderLabelsFor(payload)) {
+      clearReminder();
+      if (els.reminderMsg) {
+        els.reminderMsg.hidden = true;
+        els.reminderMsg.textContent = "";
+      }
+    }
+    if (els.reminderPanel) {
+      const canRemind = medicines.some((medicine) => medicine.matched);
+      els.reminderPanel.hidden = !canRemind;
+      if (els.reminderHelp) {
+        els.reminderHelp.textContent = canRemind ? t().reminder.help : "";
+      }
+      if (!canRemind) clearReminder();
+    }
+    renderReminderBanner();
+
     els.disclaimer.textContent =
       (payload.disclaimer && (payload.disclaimer[language] || payload.disclaimer.en)) || "";
     els.memoryProof.textContent = t().memory;
@@ -432,6 +493,137 @@
 
     resetSpeechWarning();
     speakCurrent();
+  }
+
+  // ---------------------------------------------------------------------
+  // Dose reminders: the server builds the plan, this tab keeps the clock
+  // ---------------------------------------------------------------------
+  let reminderPlan = null;
+  let reminderLabels = "";
+  let reminderTimer = null;
+  let reminderDueAt = 0;
+
+  function reminderLabelsFor(payload) {
+    return ((payload && payload.medicines) || [])
+      .map((medicine) => medicine.label)
+      .filter(Boolean)
+      .join("|");
+  }
+
+  function stopReminderClock() {
+    if (reminderTimer) clearInterval(reminderTimer);
+    reminderTimer = null;
+  }
+
+  /** Forget the plan: in-memory only, so this really is the end of it. */
+  function clearReminder() {
+    stopReminderClock();
+    reminderPlan = null;
+    reminderLabels = "";
+    reminderDueAt = 0;
+    if (els.reminderBanner) els.reminderBanner.hidden = true;
+  }
+
+  /** Show (or refresh) the countdown to the next dose, in the chosen language. */
+  function renderReminderBanner() {
+    if (!els.reminderBanner) return;
+    if (!reminderPlan) {
+      els.reminderBanner.hidden = true;
+      return;
+    }
+    const next = Reminders.nextDose(reminderPlan.slots, Date.now());
+    if (!next) {
+      els.reminderBanner.hidden = true;
+      return;
+    }
+    els.reminderBanner.hidden = false;
+    els.reminderNext.textContent = t().reminder.next(
+      next.slot.time,
+      Reminders.formatLeft(next.inMs, t().reminder)
+    );
+    reminderDueAt = next.at;
+  }
+
+  /** Speak the dose and, when the phone allows it, post a local notification. */
+  function announceDose(slot) {
+    const speech = slot && slot.speech;
+    const text = speech ? speech[language] || speech.en : "";
+    if (!text) return;
+    Promise.resolve(Speech.speak(text, language)).catch(() => undefined);
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      try {
+        new Notification(t().reminder.title, { body: text, tag: "kathapulse-dose" });
+      } catch (err) {
+        // A browser that refuses notifications still gets the spoken reminder.
+      }
+    }
+  }
+
+  function reminderTick() {
+    if (!reminderPlan) return;
+    const now = Date.now();
+    const next = Reminders.nextDose(reminderPlan.slots, now);
+    if (!next) return;
+    if (reminderDueAt && now >= reminderDueAt - 1000) announceDose(next.slot);
+    renderReminderBanner();
+  }
+
+  function startReminderClock() {
+    stopReminderClock();
+    renderReminderBanner();
+    reminderTimer = setInterval(reminderTick, 15000);
+  }
+
+  /** Ask the server for a plan (it stores nothing) and start the local clock. */
+  async function scheduleReminder() {
+    if (!lastPayload) return;
+    const names = (lastPayload.medicines || [])
+      .filter((medicine) => medicine.matched && medicine.label)
+      .map((medicine) => medicine.label);
+    if (!names.length) return;
+
+    const pattern = els.pattern ? els.pattern.value : "1-0-1";
+    if (els.scheduleBtn) els.scheduleBtn.disabled = true;
+    els.reminderMsg.hidden = false;
+    els.reminderMsg.textContent = t().busyCheck;
+
+    try {
+      const plan = await requestWithTimeout("/reminders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          medicines: names.map((name) => ({ name })),
+          pattern,
+          language,
+        }),
+      });
+
+      if (!plan || !plan.scheduled) {
+        clearReminder();
+        els.reminderMsg.textContent =
+          (plan && plan.message && (plan.message[language] || plan.message.en)) || "";
+        return;
+      }
+
+      reminderPlan = plan;
+      reminderLabels = reminderLabelsFor(lastPayload);
+      els.reminderMsg.textContent = plan.message[language] || plan.message.en || "";
+      startReminderClock();
+
+      if (
+        typeof Notification !== "undefined" &&
+        Notification.permission === "default" &&
+        typeof Notification.requestPermission === "function"
+      ) {
+        Promise.resolve(Notification.requestPermission()).catch(() => undefined);
+      }
+    } catch (err) {
+      const code = State.classifyError(err, { online: navigator.onLine !== false });
+      els.reminderMsg.textContent = State.errorCopy(code, language);
+      clearReminder();
+    } finally {
+      if (els.scheduleBtn) els.scheduleBtn.disabled = false;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -845,6 +1037,18 @@
   els.shutter.addEventListener("click", shoot);
   els.fileInput.addEventListener("change", pickFile);
   els.manualForm.addEventListener("submit", submitManual);
+
+  // Dose reminders: schedule for the scan on screen, cancel at any time.
+  if (els.scheduleBtn) els.scheduleBtn.addEventListener("click", scheduleReminder);
+  if (els.cancelReminderBtn) {
+    els.cancelReminderBtn.addEventListener("click", () => {
+      clearReminder();
+      if (els.reminderMsg) {
+        els.reminderMsg.hidden = false;
+        els.reminderMsg.textContent = "";
+      }
+    });
+  }
   els.retryBtn.addEventListener("click", retry);
   els.speakBtn.addEventListener("click", speakCurrent);
 
