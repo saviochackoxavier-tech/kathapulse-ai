@@ -55,6 +55,11 @@
     spokenPanel: document.getElementById("spoken-panel"),
     spokenScript: document.getElementById("spoken-script"),
     spokenLabel: document.getElementById("spoken-label"),
+    batchBanner: document.getElementById("batch-banner"),
+    batchBannerLabel: document.getElementById("batch-banner-label"),
+    batchBannerList: document.getElementById("batch-banner-list"),
+    batchInput: document.getElementById("batch-input"),
+    expiryInput: document.getElementById("expiry-input"),
   };
 
   let language = "ml";
@@ -90,6 +95,7 @@
       readAloud: "ഉച്ചത്തിൽ വായിക്കുക · Read aloud",
       readAloudOffline: "ശബ്ദം ലഭ്യമല്ല — താഴെയുള്ളത് വായിക്കുക",
       errorTitle: "സാങ്കേതിക തകരാർ",
+      batchLabel: "ബാച്ച്, കാലഹരണ പരിശോധന",
     },
     hi: {
       verdict: {
@@ -115,6 +121,7 @@
       readAloud: "ज़ोर से पढ़ें · Read aloud",
       readAloudOffline: "आवाज़ उपलब्ध नहीं — नीचे लिखा पढ़ें",
       errorTitle: "तकनीकी गड़बड़ी",
+      batchLabel: "बैच और एक्सपायरी जाँच",
     },
     en: {
       verdict: {
@@ -140,6 +147,7 @@
       readAloud: "Read aloud",
       readAloudOffline: "Speech unavailable on this device — read the text below",
       errorTitle: "Something went wrong",
+      batchLabel: "Batch & expiry check",
     },
   };
 
@@ -149,6 +157,16 @@
   // State → screen
   // ---------------------------------------------------------------------
   const VERDICT_ICON = { critical: "⛔", caution: "⚠️", safe: "✅", unknown: "❓" };
+
+  /** Box-level finding codes: these render in the banner above the verdict.
+   *  Anything else is a combination warning and stays in the findings list. */
+  const BATCH_CODES = {
+    RECALLED_BATCH: "recall",
+    EXPIRED_STOCK: "expired",
+    EXPIRY_SOON: "expiring",
+    EXPIRY_UNREADABLE: "unreadable",
+    COLD_CHAIN_RISK: "cold",
+  };
 
   function dispatch(event, error) {
     state = State.transition(state, event, error);
@@ -220,6 +238,60 @@
   // ---------------------------------------------------------------------
   // Rendering the result
   // ---------------------------------------------------------------------
+
+  /**
+   * Render the batch/expiry banner.
+   *
+   * A recalled batch or an expired foil is not one warning among many: it is a
+   * reason not to hand the box over at all, so it goes above the verdict, in
+   * crimson, with its own action line — and the device voice reads it first
+   * because it appears first in the findings the server spoke.
+   */
+  function renderBatchBanner(findings) {
+    if (!els.batchBanner) return;
+    els.batchBanner.hidden = !findings.length;
+    els.batchBannerList.textContent = "";
+    if (!findings.length) {
+      els.batchBanner.className = "batch-banner";
+      return;
+    }
+    const critical = findings.some((finding) => finding.severity === "critical");
+    els.batchBanner.className = "batch-banner " + (critical ? "critical" : "warning");
+    els.batchBannerLabel.textContent = t().batchLabel;
+
+    findings.forEach((finding) => {
+      const item = document.createElement("li");
+      item.className = "batch-item " + (BATCH_CODES[finding.code] || "");
+
+      const head = document.createElement("div");
+      head.className = "batch-item-head";
+
+      const badge = document.createElement("span");
+      badge.className = "finding-badge";
+      badge.textContent = (t().badge[finding.severity] || finding.severity).toUpperCase();
+
+      const title = document.createElement("h3");
+      title.className = "batch-item-title";
+      title.textContent = finding.title[language] || finding.title.en;
+
+      head.appendChild(badge);
+      head.appendChild(title);
+
+      const message = document.createElement("p");
+      message.className = "batch-item-message";
+      message.textContent = finding.message[language] || finding.message.en;
+
+      const action = document.createElement("p");
+      action.className = "batch-item-action";
+      action.textContent = finding.action[language] || finding.action.en;
+
+      item.appendChild(head);
+      item.appendChild(message);
+      item.appendChild(action);
+      els.batchBannerList.appendChild(item);
+    });
+  }
+
   function renderResult(payload) {
     // The run is over: clear the "checking" line here so both the photo and the
     // named-scan paths leave no stale busy text under a finished verdict.
@@ -246,8 +318,13 @@
       });
     });
 
+    // Box-level findings (recall, expiry, cold chain) live in the banner above
+    // the verdict; everything else stays in the findings list below it.
+    const allFindings = safety.findings || [];
+    renderBatchBanner(allFindings.filter((finding) => BATCH_CODES[finding.code]));
+
     els.findings.textContent = "";
-    (safety.findings || []).forEach((finding) => {
+    allFindings.filter((finding) => !BATCH_CODES[finding.code]).forEach((finding) => {
       const item = document.createElement("li");
       item.className = "finding " + finding.severity;
 
@@ -623,15 +700,24 @@
       .slice(0, 10);
   }
 
+  /** Batch and expiry as typed by a pharmacist (empty strings when unused). */
+  function manualBatch() {
+    const value = (input) => (input && input.value ? input.value.trim() : "");
+    return { batch_no: value(els.batchInput), expiry: value(els.expiryInput) };
+  }
+
   /**
    * Scan a list of medicine names and render (or fail) exactly like a photo.
    *
    * @param {string[]} names printed names, as typed or preset
    * @param {() => unknown} [onRetry] what Retry should run; repeating this
    *        same scan by default.
+   * @param {{batch_no: string, expiry: string}} [batch] printed batch/expiry,
+   *        applied to every name in this scan (one shelf box, one batch).
    */
-  async function runNamedScan(names, onRetry) {
+  async function runNamedScan(names, onRetry, batch) {
     if (State.isBusy(state) || !names || !names.length) return;
+    const box = batch || { batch_no: "", expiry: "" };
 
     // A fresh attempt starts clean: no stale file selection, no stale error.
     els.fileInput.value = "";
@@ -647,12 +733,15 @@
       const payload = await requestWithTimeout("/verify-medicines", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ medicines: names.map((name) => ({ name })), language }),
+        body: JSON.stringify({
+          medicines: names.map((name) => ({ name, ...box })),
+          language,
+        }),
       });
       dispatch("UPLOAD_OK");
       renderResult(payload);
     } catch (err) {
-      failWith("UPLOAD_FAIL", err, onRetry || (() => runNamedScan(names)));
+      failWith("UPLOAD_FAIL", err, onRetry || (() => runNamedScan(names, undefined, box)));
     }
   }
 
@@ -661,23 +750,32 @@
     const names = parseManualNames();
     if (!names.length) return;
     // Retry re-submits the form, so an edit made after the failure is honoured.
-    return runNamedScan(names, () => els.manualForm.requestSubmit());
+    return runNamedScan(names, () => els.manualForm.requestSubmit(), manualBatch());
   }
 
   // ---------------------------------------------------------------------
   // Demo presets: a live pitch cannot depend on a camera or a physical strip
   // ---------------------------------------------------------------------
   const DEMO_PRESETS = {
-    "dup-lasa": ["Telma 40", "Telma-H 40/12.5"],
-    "dup-para": ["Dolo 650", "Crocin Cold & Flu"],
-    "lasa-alone": ["Amaryl 1 mg"],
+    "dup-lasa": { names: ["Telma 40", "Telma-H 40/12.5"] },
+    "dup-para": { names: ["Dolo 650", "Crocin Cold & Flu"] },
+    "lasa-alone": { names: ["Amaryl 1 mg"] },
+    // Pharmacy audit: a recalled metformin batch that has also passed its date.
+    "batch-recall": {
+      names: ["Glycomet 500"],
+      batch_no: "GM2407A",
+      expiry: "09/2026",
+    },
   };
 
   /** Run the preset behind a `data-demo` id; unknown ids are ignored. */
   function runPreset(id) {
-    const names = DEMO_PRESETS[id];
-    if (names) return runNamedScan(names);
-    return undefined;
+    const preset = DEMO_PRESETS[id];
+    if (!preset) return undefined;
+    return runNamedScan(preset.names, () => runPreset(id), {
+      batch_no: preset.batch_no || "",
+      expiry: preset.expiry || "",
+    });
   }
 
   async function retry() {

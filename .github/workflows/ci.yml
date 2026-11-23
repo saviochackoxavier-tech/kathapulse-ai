@@ -100,6 +100,10 @@ jobs:
         working-directory: tests/js
         run: node audiopack.test.mjs
 
+      - name: Batch recall banner in a DOM
+        working-directory: tests/js
+        run: node recall.test.mjs
+
       - name: Live demo presets
         working-directory: tests/js
         run: node presets.test.mjs

@@ -65,6 +65,27 @@ _INJECTION_PATTERNS = [
 ]
 
 
+#: A batch number is letters, digits and separators -- nothing else, and short.
+_BATCH_CHARS = re.compile(r"^[A-Za-z0-9 ./_\-]{0,24}$")
+_EXPIRY_CHARS = re.compile(r"^[A-Za-z0-9 ./_\-]{0,20}$")
+
+
+def _sanitise_batch_no(value: str) -> str:
+    """Validate a printed batch number; empty means "not read", which is fine."""
+    cleaned = " ".join(str(value or "").split())
+    if cleaned and not _BATCH_CHARS.match(cleaned):
+        raise ValueError("batch number contains characters that are not allowed")
+    return cleaned
+
+
+def _sanitise_expiry(value: str) -> str:
+    """Validate a printed expiry; parsing happens in ``app.recall``."""
+    cleaned = " ".join(str(value or "").split())
+    if cleaned and not _EXPIRY_CHARS.match(cleaned):
+        raise ValueError("expiry contains characters that are not allowed")
+    return cleaned
+
+
 def _sanitise_free_text(value: str) -> str:
     """Collapse whitespace and reject anything outside the drug-name charset."""
     cleaned = " ".join(value.split())
@@ -125,8 +146,14 @@ class ManualMedicine(BaseModel):
 
     name: str = Field(min_length=1, max_length=MAX_TEXT_CHARS, examples=["Dolo 650"])
     strength_mg: float | None = Field(default=None, ge=0, le=5000)
+    #: Printed batch number and expiry (``04/2026``, ``APR 26`` …). Optional:
+    #: the clinical rules work without them, the pharmacy audit needs them.
+    batch_no: str = Field(default="", max_length=24, examples=["GM2407A"])
+    expiry: str = Field(default="", max_length=20, examples=["04/2026"])
 
     _validate_name = field_validator("name")(_sanitise_free_text)
+    _validate_batch = field_validator("batch_no")(_sanitise_batch_no)
+    _validate_expiry = field_validator("expiry")(_sanitise_expiry)
 
 
 class VerifyTextRequest(BaseModel):
@@ -169,6 +196,10 @@ class ScannedMedicine(BaseModel):
     #: A shelf name we recognise but deliberately do not map to molecules
     #: (e.g. Loprin-LS). Still participates in LASA comparison, never in salt rules.
     brand_only: bool = False
+    #: Printed batch number and expiry, when the vision tier or the user read
+    #: them. Empty means "not available", never "no risk".
+    batch_no: str = ""
+    expiry: str = ""
 
 
 class LanguageText(BaseModel):
@@ -226,6 +257,9 @@ class VerifyResponse(BaseModel):
     safety_message_en: str = ""
     duplicate_salt_warning: bool = False
     lasa_risk: bool = False
+    #: A recalled batch was matched, and/or an expiry problem was found.
+    recall_warning: bool = False
+    expiry_warning: bool = False
 
 
 class StripReport(BaseModel):
@@ -258,6 +292,8 @@ class BatchVerifyResponse(BaseModel):
     safety_message_en: str = ""
     duplicate_salt_warning: bool = False
     lasa_risk: bool = False
+    recall_warning: bool = False
+    expiry_warning: bool = False
 
 
 class HealthResponse(BaseModel):
@@ -271,3 +307,5 @@ class HealthResponse(BaseModel):
     vision_fallback: bool = False
     ocr_engine: str | None = None
     taxonomy_ingredients: int
+    #: How many pilot recall notices the offline batch audit carries.
+    recall_notices: int = 0

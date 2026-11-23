@@ -18,11 +18,14 @@ you take two tablets that contain the same drug.
    paracetamol at once, from two brands.
 4. Tap **Amaryl 1 mg** → amber `caution` card: sounds like Amlopres, a
    different drug — verify before taking.
-5. Switch the language selector to **हिन्दी** to see the identical findings, and
+5. Tap **Glycomet 500 · batch audit** → crimson banner *above* the verdict: the
+   batch is on the recall list **and** the foil is past its expiry, spoken in
+   Malayalam. This is the pharmacy audit path — it reads the box, not the dose.
+6. Switch the language selector to **हिन्दी** to see the identical findings, and
    the same spoken script, in Hindi.
 
-The three presets run through the deterministic clinical engine only, so they
-work with no vision key and no network egress. Real photos additionally need the
+All four presets run through the deterministic engines only (clinical rules plus
+the offline batch audit), so they work with no vision key and no network egress. Real photos additionally need the
 optional vision or OCR tier — see [Configuration](#configuration).
 
 **Privacy in one line:** the browser strips EXIF before upload, the server
@@ -182,8 +185,8 @@ stateless, so scaling out is just more replicas behind the same origin.
 | Endpoint | Purpose |
 |---|---|
 | `POST /verify-strip` | multipart `image` + `language` (`ml`/`hi`/`en`) + `paracetamol_taken_today_mg` |
-| `POST /verify-medicines` | JSON `{medicines:[{name}], language, paracetamol_taken_today_mg}` |
-| `GET /health` | which extraction tiers are live, taxonomy size |
+| `POST /verify-medicines` | JSON `{medicines:[{name, batch_no?, expiry?}], language, paracetamol_taken_today_mg}` |
+| `GET /health` | which extraction tiers are live, taxonomy size, pilot recall-notice count |
 | `GET /` | the app shell |
 
 Response shape (abridged):
@@ -262,17 +265,66 @@ fixed combinations (Telma-H, Combiflam, Montair-LC, Zerodol-SP, Augmentin,
 Ultracet …). Combination products resolve to *all* their molecules, which is how
 the engine catches "Telma-H + a separate HCTZ tablet".
 
+## Batch recall & expiry audit (Pass 29)
+
+The clinical engine asks whether the **combination** is dangerous. This asks
+whether the **box** is still fit to hand over — the question a pharmacy counter
+actually faces. It runs on the same request, in the same RAM buffer, with no
+network call, and its copy is localised like every other finding:
+
+| Code | Severity | Trigger |
+|---|---|---|
+| `RECALLED_BATCH` | critical | the printed batch falls inside a recall notice for that molecule or brand family |
+| `EXPIRED_STOCK` | critical | the printed expiry month is already in the past |
+| `EXPIRY_SOON` | warning | it expires this month or next |
+| `EXPIRY_UNREADABLE` | warning | an expiry is printed but cannot be parsed (**not** treated as fine) |
+| `COLD_CHAIN_RISK` | warning | the label names a 2–8 °C product (insulin, vaccine, oxytocin, adrenaline …) — a photo can never clear that |
+
+**Where the batch and date come from.** The vision tier reads `batch_number`
+and `expiry_date` off the same photo (B.No./Lot line and the EXP stamp); the
+manual path exposes two optional fields; the demo preset carries them as data.
+Empty means "not read", never "no risk" — no batch, no recall claim.
+
+**Expiry parsing** accepts what Indian foils actually print: `04/2026`,
+`4/2026`, `04-2026`, `04.2026`, `2026-04`, `04/26`, `APR 2026`, `APR26`,
+`APRIL 26`, with or without a leading `EXP`/`EXP: `/`USE BEFORE`. Anything else
+becomes `EXPIRY_UNREADABLE` rather than a silent pass.
+
+**Rendering.** Box findings are not one warning among many — a recalled batch or
+an expired foil is a reason not to hand the box over — so they render in a
+banner **above** the verdict: crimson for a recall or an expired date, amber for
+expiry-soon / unreadable / cold chain, with a badge, the localised title,
+message and action, and `role="alert"` so a screen reader announces it. They are
+removed from the list below so the same warning is never printed twice, and they
+stay in `safety.findings` and in the spoken script, so the audio pack gets a
+clip slot per code (`ml:RECALLED_BATCH`, `hi:EXPIRED_STOCK`, …) and the device
+voice reads the critical ones first.
+
+**Data honesty.** `app/recall.py` ships **four pilot notices** (metformin
+impurity, telmisartan potency, paracetamol dissolution, pantoprazole labelling).
+The refs are local trace labels (`PILOT-RCL-01`), **not** CDSCO citations, and
+the feed is offline by design so the demo cannot depend on a regulatory API. A
+real deployment replaces the `RECALLS` tuple with a signed feed; the matching
+code does not change.
+
+**Privacy.** The batch number and expiry are the same class of data as the
+drug name — no patient identifier, no retention. The audit is a pure function
+over the scanned list (`as_of` injected for tests), and a test pins that it
+writes nothing to disk.
+
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 148 backend: rules, LASA, accuracy, vision, dual-key failover, e2e, batch/offline/relay/hardening/ratelimit/audio
+./.venv/bin/pytest                 # 206 backend: rules, LASA, accuracy, vision, dual-key failover, batch/recall/expiry audit, e2e, batch/offline/relay/hardening/ratelimit/audio
 ./.venv/bin/pytest tests/test_failover.py   # 16 dual-key rotation checks on their own
+./.venv/bin/pytest tests/test_recall.py     # 56 recall / expiry / cold-chain audit checks on their own
 cd tests/js && npm ci && npm test        # 15 EXIF-scrub checks (npm ci: the lockfile is committed)
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
 cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
 cd tests/js && node audio-pack.test.mjs  # 10 audio-pack loader, script and fallback checks (no jsdom, no network)
 cd tests/js && node audiopack.test.mjs   # 17 DOM-level checks: app.js drives playScript, or falls back to speech in en/ml/hi
+cd tests/js && node recall.test.mjs      # 13 DOM-level checks: recall/expiry banner, ml+hi copy, pack slot per code, typed batch
 # Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
 # POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
 ```
@@ -291,7 +343,7 @@ two independent jobs so a backend failure does not hide a frontend one:
 | Job | Steps |
 |---|---|
 | **Backend** | Python 3.12 → `pip install -r requirements.txt` → `pytest` |
-| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the six Node suites, one step each |
+| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the seven Node suites, one step each |
 
 The preset suite is the reason CI starts the server at all: it is the only test
 that talks to the real API. The app is started with **no** vision keys, so CI
@@ -305,17 +357,19 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **147 passed** (132 + 15 dual-key failover) |
+| Backend suite | **206 passed** (148 + 2 vision batch/expiry + 56 batch-audit checks) |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
 | Retry path, executed in a DOM (jsdom) | **4/4 checks passed** — fails 3/4 if the Pass 4 defect is reintroduced |
 | Audio pack wiring, real DOM (Passes 24-25) | **17/17 checks passed** — clips present → `playScript` runs intro/findings/outro and the device voice stays silent; clips missing → nothing half-plays and the device voice takes over |
 | Live demo presets, real API + real DOM | **9/9 checks passed** — Telma pair, Dolo+Crocin and Amaryl each render the expected card (32 ms on the cold first call, then 7 ms and 4 ms), and the speech handoff carries the same Malayalam string the API returned |
+| Batch recall & expiry banner, real API + real DOM | **13/13 checks passed** — a recalled, expired batch renders a crimson `role="alert"` banner above the verdict in Malayalam and Hindi, is not repeated in the findings list, gets one audio clip per code, and the preset POSTs `batch_no`/`expiry`; a near-expiry box renders the same banner in amber |
+| Batch audit engine | **56/56 checks passed** — 15 printed expiry shapes parsed, 9 refused as unreadable, recall matching by molecule/brand/batch prefix, no claim without a batch, cold-chain flag, tri-lingual copy, deterministic date injection, nothing written to disk |
 
 ## Demo presets
 
-Three one-click buttons above the camera run the pilot cases through
+Four one-click buttons above the camera run the pilot cases through
 `POST /verify-medicines`, so a live demo never depends on a camera, a steady
 hand, or a vision key:
 
@@ -754,5 +808,9 @@ language). Speech itself follows the selected language.
   detects the missing voice and says so instead of reading English aloud.
 * The taxonomy is a pilot subset, not a licensed drug database. Replace
   `app/taxonomy.py` with a CDSCO-style feed before any clinical deployment.
+* The recall feed is **four curated pilot notices**, not a live regulator feed;
+  every `ref` is a local trace label. The matching engine is finished and
+tested, the data is not — replace `app/recall.py:RECALLS` before a pilot relies
+  on it.
 * This is a screening aid. It is not a diagnosis and not a substitute for a
   pharmacist.

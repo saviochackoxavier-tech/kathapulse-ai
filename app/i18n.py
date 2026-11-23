@@ -229,6 +229,128 @@ TEXTS: dict[str, dict[str, str]] = {
         "ml": "സംശയമുണ്ടെങ്കിൽ ഫാർമസിസ്റ്റിനോട് ചോദിക്കുക.",
         "hi": "कोई शंका हो तो फार्मासिस्ट से पूछें।",
     },
+    # -- batch recall ------------------------------------------------------
+    "recall.title": {
+        "en": "Recalled batch",
+        "ml": "തിരിച്ചുവിളിച്ച ബാച്ച്",
+        "hi": "वापस बुलाया गया बैच",
+    },
+    "recall.body": {
+        "en": "{label} — batch {batch} — is on the recall list: {reason}",
+        "ml": "{label} — ബാച്ച് {batch} — തിരിച്ചുവിളിച്ച പട്ടികയിലുണ്ട്: {reason}",
+        "hi": "{label} — बैच {batch} — वापस बुलाने की सूची में है: {reason}",
+    },
+    "recall.action": {
+        "en": "Do not take or dispense this batch. Return it to the pharmacy and show this screen.",
+        "ml": "ഈ ബാച്ച് കഴിക്കരുത്, നൽകരുത്. ഈ സ്ക്രീൻ കാണിച്ച് ഫാർമസിയിൽ തിരികെ നൽകുക.",
+        "hi": "यह बैच न लें, न दें। यह स्क्रीन दिखाकर फार्मेसी में लौटा दें।",
+    },
+    "recall.reason.impurity": {
+        "en": "a nitrosamine impurity (NDMA) was found above the permitted limit.",
+        "ml": "അനുവദനീയമായ പരിധിയിൽ കൂടുതൽ നൈട്രോസാമൈൻ (NDMA) മാലിന്യം കണ്ടെത്തി.",
+        "hi": "अनुमति से ज़्यादा नाइट्रोसामाइन (NDMA) अशुद्धि मिली।",
+    },
+    "recall.reason.potency": {
+        "en": "the tablets tested weaker than the strength printed on the label.",
+        "ml": "ലേബലിൽ അച്ചടിച്ച അളവിലും ദുർബലമാണെന്ന് പരിശോധനയിൽ കണ്ടെത്തി.",
+        "hi": "जाँच में गोलियाँ लेबल की ताकत से कमज़ोर मिलीं।",
+    },
+    "recall.reason.dissolution": {
+        "en": "it did not dissolve as it should, so the body may not absorb it.",
+        "ml": "ശരിയായി അലിയാത്തതിനാൽ ശരീരത്തിൽ ആഗിരണം ആകണമെന്നില്ല.",
+        "hi": "ठीक से न घुलने के कारण शरीर में पूरी तरह नहीं पहुँच सकती।",
+    },
+    "recall.reason.labelling": {
+        "en": "the strength printed on the foil does not match the tablet inside.",
+        "ml": "ഫോയിലിൽ അച്ചടിച്ച അളവും ഉള്ളിലെ ഗുളികയും തമ്മിൽ യോജിക്കുന്നില്ല.",
+        "hi": "पत्ते पर छपी ताकत और अंदर की गोली में अंतर है।",
+    },
+    # -- expiry ------------------------------------------------------------
+    "expiry.expired.title": {
+        "en": "Expired medicine",
+        "ml": "കാലഹരണപ്പെട്ട മരുന്ന്",
+        "hi": "एक्सपायर हो चुकी दवा",
+    },
+    "expiry.expired.body": {
+        "en": "{label} expired on {expiry}. An expired tablet can be weaker than the "
+              "label says, and some break down into harmful substances.",
+        "ml": "{label} {expiry}-ൽ കാലഹരണപ്പെട്ടു. കാലഹരണപ്പെട്ട ഗുളിക ലേബലിൽ "
+              "പറയുന്നതിലും ദുർബലമാകാം; ചിലത് ദോഷകരമായ വസ്തുവായി മാറും.",
+        "hi": "{label} {expiry} को एक्सपायर हो चुकी है। एक्सपायर दवा लेबल से कमज़ोर "
+              "हो सकती है, और कुछ हानिकारक पदार्थ में बदल जाती हैं।",
+    },
+    "expiry.expired.action": {
+        "en": "Do not take it. Give it to the pharmacy for safe disposal.",
+        "ml": "കഴിക്കരുത്. സുരക്ഷിതമായി നശിപ്പിക്കാൻ ഫാർമസിയിൽ നൽകുക.",
+        "hi": "इसे न लें। सुरक्षित निस्तारण के लिए फार्मेसी को दें।",
+    },
+    "expiry.soon.title": {
+        "en": "Expiry is near",
+        "ml": "കാലഹരണം അടുത്തു",
+        "hi": "एक्सपायरी पास है",
+    },
+    "expiry.soon.body": {
+        "en": "{label} expires {expiry} — this month or next. Do not keep it for a "
+              "long course.",
+        "ml": "{label} {expiry}-ൽ കാലഹരണപ്പെടും — ഈ മാസമോ അടുത്ത മാസമോ. ദീർഘകാല "
+              "കോഴ്സിന് ഇത് സൂക്ഷിക്കരുത്.",
+        "hi": "{label} {expiry} को एक्सपायर होगी — इस महीने या अगले। लंबे कोर्स के "
+              "लिए इसे न रखें।",
+    },
+    "expiry.soon.action": {
+        "en": "Check the date before every dose. Ask the pharmacist to exchange it "
+              "for a later batch.",
+        "ml": "ഓരോ ഡോസിനും മുൻപ് തീയതി നോക്കുക. പിന്നീടുള്ള ബാച്ചിനായി "
+              "ഫാർമസിസ്റ്റിനോട് മാറ്റം ആവശ്യപ്പെടുക.",
+        "hi": "हर खुराक से पहले तारीख देखें। बाद के बैच के लिए फार्मासिस्ट से "
+              "बदलवाएँ।",
+    },
+    "expiry.unreadable.title": {
+        "en": "Expiry not readable",
+        "ml": "കാലഹരണ തീയതി വായിക്കാനായില്ല",
+        "hi": "एक्सपायरी तारीख पढ़ी नहीं गई",
+    },
+    "expiry.unreadable.body": {
+        "en": "The expiry printed on {label} could not be read (\"{printed}\"). Treat "
+              "the box as unverified.",
+        "ml": "{label}-ൽ അച്ചടിച്ച കാലഹരണ തീയതി വായിക്കാനായില്ല (\"{printed}\"). "
+              "പെട്ടി സ്ഥിരീകരിക്കാത്തതായി കണക്കാക്കുക.",
+        "hi": "{label} पर छपी एक्सपायरी तारीख पढ़ी नहीं जा सकी (\"{printed}\"). "
+              "डिब्बे को असत्यापित मानें।",
+    },
+    "expiry.unreadable.action": {
+        "en": "Show the foil to the pharmacist before taking it.",
+        "ml": "കഴിക്കുന്നതിന് മുൻപ് ഫോയിൽ ഫാർമസിസ്റ്റിനെ കാണിക്കുക.",
+        "hi": "लेने से पहले पत्ता फार्मासिस्ट को दिखाएँ।",
+    },
+    # -- cold chain --------------------------------------------------------
+    "cold.title": {
+        "en": "Cold-chain product",
+        "ml": "തണുപ്പിൽ സൂക്ഷിക്കേണ്ട മരുന്ന്",
+        "hi": "कोल्ड-चेन दवा",
+    },
+    "cold.body": {
+        "en": "{label} must be kept between 2 °C and 8 °C. A box left in a warm "
+              "counter can lose strength without any visible change, and a photo "
+              "cannot tell you whether that happened.",
+        "ml": "{label} 2 °C മുതൽ 8 °C വരെ തണുപ്പിൽ സൂക്ഷിക്കണം. ചൂടുള്ള "
+              "കൗണ്ടറിൽ വെച്ച പെട്ടി കാഴ്ചയിൽ മാറ്റമില്ലാതെ ദുർബലമാകാം; "
+              "അത് ഫോട്ടോയിൽ നിന്ന് അറിയാനാവില്ല.",
+        "hi": "{label} को 2 °C से 8 °C के बीच रखना ज़रूरी है। गर्म काउंटर पर रखा "
+              "डिब्बा दिखने में बदले बिना कमज़ोर हो सकता है, और फ़ोटो से यह पता "
+              "नहीं चलता।",
+    },
+    "cold.action": {
+        "en": "Check the fridge log or the cold-chain indicator before dispensing.",
+        "ml": "നൽകുന്നതിന് മുൻപ് ഫ്രിഡ്ജ് ലോഗോ കോൾഡ്-ചെയിൻ ഇൻഡിക്കേറ്ററോ "
+              "പരിശോധിക്കുക.",
+        "hi": "देने से पहले फ्रिज लॉग या कोल्ड-चेन इंडिकेटर जाँचें।",
+    },
+    "batch.banner": {
+        "en": "Batch & expiry check",
+        "ml": "ബാച്ച്, കാലഹരണ പരിശോധന",
+        "hi": "बैच और एक्सपायरी जाँच",
+    },
 }
 
 #: Plain-language names for drug classes, used inside class-duplicate findings.

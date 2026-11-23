@@ -48,10 +48,13 @@ _VISION_PROMPT = (
     "Return ONLY minified JSON, no prose, no markdown: "
     '{"medicines":[{"brand_name":"<printed brand>",'
     '"active_ingredients":["<molecule exactly as printed>"],'
-    '"dosage_strength":"<e.g. 650 mg or 40 mg/12.5 mg>"}]}. '
+    '"dosage_strength":"<e.g. 650 mg or 40 mg/12.5 mg>",'
+    '"batch_number":"<batch printed after B.No./Batch/Lot, or empty>",'
+    '"expiry_date":"<printed expiry as MM/YYYY, or empty>"}]}. '
     "One object per physical strip or box visible. Max 4 objects, max 4 ingredients each. "
     "Copy only text you can actually see; never guess, never add commentary, "
-    "never invent a molecule. If nothing is legible return {\"medicines\":[]}."
+    "never invent a molecule, a batch number or a date. "
+    "If nothing is legible return {\"medicines\":[]}."
 )
 
 
@@ -68,6 +71,10 @@ class _VisionMedicine(BaseModel):
     brand_name: str = Field(default="", max_length=200)
     active_ingredients: list[str] = Field(default_factory=list, max_length=8)
     dosage_strength: str = Field(default="", max_length=40)
+    #: Batch and expiry are optional by design: the pharmacy audit needs them,
+    #: the clinical rules never do, and an unread foil must not fail the scan.
+    batch_number: str = Field(default="", max_length=40)
+    expiry_date: str = Field(default="", max_length=40)
 
     # Tolerated aliases: older prompts used label/names.
     label: str = Field(default="", max_length=200)
@@ -84,6 +91,14 @@ class _VisionMedicine(BaseModel):
     def as_names(self) -> list[str]:
         raw = [*self.active_ingredients, *self.names]
         return [_clean(n) for n in raw if _clean(n)][:8]
+
+    def as_batch(self) -> str:
+        """Printed batch number, or "" -- never a guess."""
+        return _code(self.batch_number)
+
+    def as_expiry(self) -> str:
+        """Printed expiry, or "" -- ``app.recall`` decides what it means."""
+        return _code(self.expiry_date)
 
 
 class _VisionResult(BaseModel):
@@ -104,8 +119,18 @@ class Extraction:
 # ---------------------------------------------------------------------------
 
 
-def resolve_medicine(label: str, raw_names: list[str], strip_index: int) -> ScannedMedicine:
-    """Map printed text onto the taxonomy, keeping printed strengths."""
+def resolve_medicine(
+    label: str,
+    raw_names: list[str],
+    strip_index: int,
+    batch_no: str = "",
+    expiry: str = "",
+) -> ScannedMedicine:
+    """Map printed text onto the taxonomy, keeping printed strengths.
+
+    ``batch_no`` and ``expiry`` are carried through untouched: they belong to
+    the box, not to the molecule, and the batch audit reads them verbatim.
+    """
     haystack = " ".join([label, *raw_names]).strip()
 
     # A brand we recognise but refuse to resolve (Loprin-LS): stop here rather
@@ -116,6 +141,8 @@ def resolve_medicine(label: str, raw_names: list[str], strip_index: int) -> Scan
             matched=False,
             ingredients=[],
             brand_only=True,
+            batch_no=batch_no,
+            expiry=expiry,
         )
 
     matches = taxonomy.lookup(haystack)
@@ -145,14 +172,24 @@ def resolve_medicine(label: str, raw_names: list[str], strip_index: int) -> Scan
         label=label or (raw_names[0] if raw_names else f"Strip {strip_index + 1}"),
         matched=bool(ingredients),
         ingredients=ingredients,
+        batch_no=batch_no,
+        expiry=expiry,
     )
 
 
-def build_medicines(labels: list[tuple[str, list[str]]]) -> list[ScannedMedicine]:
-    return [
-        resolve_medicine(label, names, index)
-        for index, (label, names) in enumerate(labels[:10])
-    ]
+def build_medicines(reads: list[tuple]) -> list[ScannedMedicine]:
+    """Build medicines from ``(label, names)`` or ``(label, names, batch, expiry)``.
+
+    Both shapes are accepted because the OCR tier only ever has text, while the
+    vision tier also reads the batch and expiry line.
+    """
+    medicines: list[ScannedMedicine] = []
+    for index, read in enumerate(reads[:10]):
+        label, names = read[0], read[1]
+        batch_no = read[2] if len(read) > 2 else ""
+        expiry = read[3] if len(read) > 3 else ""
+        medicines.append(resolve_medicine(label, names, index, batch_no, expiry))
+    return medicines
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +201,17 @@ def _clean(value: str) -> str:
     """Strip control characters and hard-cap length on untrusted model text."""
     value = re.sub(r"[\x00-\x1f\x7f]", " ", str(value or ""))
     return " ".join(value.split())[:120]
+
+
+def _code(value: str) -> str:
+    """Normalise a printed batch/expiry code: ASCII alphanumerics and separators.
+
+    Untrusted model text never reaches a rule unclamped, and a stray sentence
+    ("batch not visible") collapses to its usable characters rather than being
+    trusted as a batch number.
+    """
+    text = re.sub(r"[^A-Za-z0-9 ./_\-]", "", str(value or "")).strip()
+    return " ".join(text.split())[:20].upper()
 
 
 def parse_model_json(content: str) -> dict:
@@ -297,12 +345,12 @@ async def _vision_extract(
         logger.warning("vision output unparseable (%s), trying next tier", type(exc).__name__)
         return None
 
-    results: list[tuple[str, list[str]]] = []
+    results: list[tuple[str, list[str], str, str]] = []
     for item in parsed.medicines:
         label = item.as_label()
         names = item.as_names()
         if label or names:
-            results.append((label, names))
+            results.append((label, names, item.as_batch(), item.as_expiry()))
     return results or None
 
 

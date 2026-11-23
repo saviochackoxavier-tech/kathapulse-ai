@@ -12,16 +12,19 @@ Checks, in order of clinical priority:
                            nitrate + PDE5, serotonin syndrome, ...).
 4. ``DUPLICATE_CLASS``  -- two different molecules of one therapeutic family
                            (two NSAIDs, two ARBs, two sulfonylureas).
-5. ``UNRECOGNISED``     -- anything the taxonomy could not verify.
-6. ``SAFE``             -- nothing found; still not a prescription check.
+5. ``BATCH_AUDIT``      -- recall, expiry and cold-chain checks on the *box*
+                           (``app.recall``), not the combination.
+6. ``UNRECOGNISED``     -- anything the taxonomy could not verify.
+7. ``SAFE``             -- nothing found; still not a prescription check.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import date
 
-from . import i18n, taxonomy
+from . import i18n, recall, taxonomy
 from .schemas import (
     Finding,
     ResolvedIngredient,
@@ -469,14 +472,20 @@ def analyse(
     medicines: list[ScannedMedicine],
     language: Language,
     paracetamol_taken_today_mg: float = 0.0,
+    as_of: date | None = None,
 ) -> SafetyReport:
-    """Run every guardrail and return a localised, speakable report."""
+    """Run every guardrail and return a localised, speakable report.
+
+    ``as_of`` is only for the batch/expiry audit; it exists so tests and audits
+    can pin the calendar instead of depending on the day they run.
+    """
     occurrences = _flatten(medicines)
 
     findings: list[Finding] = []
     findings += _duplicate_salt_findings(occurrences)
     findings += _paracetamol_findings(occurrences, paracetamol_taken_today_mg)
     findings += _interaction_findings(occurrences)
+    findings += recall.audit(medicines, as_of)
     findings += _duplicate_class_findings(occurrences)
     findings += _lasa_findings(medicines)
 

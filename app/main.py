@@ -29,7 +29,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import clinical, config, extraction, i18n, ratelimit, relay
+from . import clinical, config, extraction, i18n, ratelimit, recall, relay
 from .schemas import (
     ALLOWED_IMAGE_TYPES,
     MAX_IMAGE_BYTES,
@@ -189,6 +189,7 @@ async def health() -> HealthResponse:
         vision_fallback=engines["vision_fallback"],
         ocr_engine=engines["ocr_engine"],
         taxonomy_ingredients=len(all_drugs()),
+        recall_notices=len(recall.RECALLS),
     )
 
 
@@ -216,6 +217,12 @@ def _flatten_flags(safety) -> dict:
         ).text,
         "duplicate_salt_warning": "DUPLICATE_SALT" in codes,
         "lasa_risk": "LASA_RISK" in codes,
+        # Box-level audit, derived from the same findings tree so a banner can
+        # never say "recalled" while the findings list stays silent.
+        "recall_warning": "RECALLED_BATCH" in codes,
+        "expiry_warning": bool(
+            codes & {"EXPIRED_STOCK", "EXPIRY_SOON", "EXPIRY_UNREADABLE"}
+        ),
     }
 
 
@@ -290,11 +297,20 @@ async def verify_strip(
 
 @app.post("/verify-medicines", response_model=VerifyResponse)
 async def verify_medicines(payload: VerifyTextRequest) -> VerifyResponse:
-    """Verify a typed list of medicines (manual entry / pharmacist tooling)."""
-    raw = [(m.name, [m.name]) for m in payload.medicines]
+    """Verify a typed list of medicines (manual entry / pharmacist tooling).
+
+    Batch and expiry are optional; when the pharmacist types them the box is
+    audited against the recall list and the printed date as well.
+    """
     medicines = [
-        extraction.resolve_medicine(label, names, index)
-        for index, (label, names) in enumerate(raw)
+        extraction.resolve_medicine(
+            item.name,
+            [item.name],
+            index,
+            batch_no=item.batch_no,
+            expiry=item.expiry,
+        )
+        for index, item in enumerate(payload.medicines)
     ]
     safety = clinical.analyse(
         medicines, payload.language, payload.paracetamol_taken_today_mg or 0.0

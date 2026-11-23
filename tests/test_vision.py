@@ -119,14 +119,52 @@ def test_vision_extracts_brand_ingredients_and_strength(groq):
 
     raw = asyncio.run(extraction._vision_extract(b"\xff\xd8\xff\xe0test", "image/jpeg"))
     assert raw, "vision tier returned nothing"
-    label, names = raw[0]
+    # A read is (label, names, batch, expiry); the batch fields stay empty when
+    # the model did not see them, which is not an error.
+    label, names, batch, expiry = raw[0]
     assert label == "DOLO 650 650 mg"
     assert "Paracetamol" in names
+    assert (batch, expiry) == ("", "")
 
     medicines = extraction.build_medicines(raw)
     assert medicines[0].matched is True
     assert medicines[0].ingredients[0].canonical == "paracetamol"
     assert medicines[0].ingredients[0].strength_mg == 650
+
+
+def test_vision_reads_the_printed_batch_and_expiry(groq):
+    """Batch and expiry are copied from the foil, normalised, never invented."""
+    groq.response = FakeResponse(
+        200,
+        model_reply(
+            '{"medicines":[{"brand_name":"GLYCOMET 500",'
+            '"active_ingredients":["Metformin"],"dosage_strength":"500 mg",'
+            '"batch_number":"gm 2407/a","expiry_date":"sep 2026"}]}'
+        ),
+    )
+
+    medicines = extraction.build_medicines(
+        asyncio.run(extraction._vision_extract(b"\xff\xd8\xff\xe0", "image/jpeg"))
+    )
+
+    assert medicines[0].batch_no == "GM 2407/A"
+    assert medicines[0].expiry == "SEP 2026"
+    assert medicines[0].ingredients[0].canonical == "metformin"
+
+
+def test_vision_drops_control_characters_from_a_batch(groq):
+    groq.response = FakeResponse(
+        200,
+        model_reply(
+            '{"medicines":[{"brand_name":"GLYCOMET 500",'
+            '"batch_number":"GM24\\u0001<script>","expiry_date":"not visible"}]}'
+        ),
+    )
+    medicines = extraction.build_medicines(
+        asyncio.run(extraction._vision_extract(b"\xff\xd8\xff\xe0", "image/jpeg"))
+    )
+    assert medicines[0].batch_no == "GM24SCRIPT"
+    assert medicines[0].expiry == "NOT VISIBLE"
 
 
 def test_vision_handles_combination_strength(groq):

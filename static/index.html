@@ -53,6 +53,11 @@
           <span class="preset-name">Amaryl 1 mg</span>
           <span class="preset-tag">LASA · Amlopres</span>
         </button>
+        <!-- Pharmacy demo: a recalled batch that also passed its expiry date. -->
+        <button type="button" class="preset preset-critical" data-demo="batch-recall">
+          <span class="preset-name">Glycomet 500 · batch audit</span>
+          <span class="preset-tag">തിരിച്ചുവിളിക്കൽ · ബാച്ച്</span>
+        </button>
       </div>
     </section>
 
@@ -111,12 +116,32 @@
       <form id="manual-form">
         <label class="visually-hidden" for="manual-input">Medicine names</label>
         <textarea id="manual-input" rows="3" placeholder="Dolo 650&#10;Crocin 500" maxlength="600"></textarea>
+        <!-- Optional pharmacy fields: audit the box, not just the molecule. -->
+        <div class="batch-fields">
+          <label class="batch-field" for="batch-input">
+            <span>Batch no. · ബാച്ച്</span>
+            <input id="batch-input" type="text" inputmode="text" autocomplete="off"
+                   maxlength="24" placeholder="GM2407A" />
+          </label>
+          <label class="batch-field" for="expiry-input">
+            <span>Expiry MM/YYYY · കാലഹരണം</span>
+            <input id="expiry-input" type="text" inputmode="text" autocomplete="off"
+                   maxlength="20" placeholder="04/2027" />
+          </label>
+        </div>
         <button type="submit" class="btn btn-primary">പരിശോധിക്കുക <span class="btn-en">Check</span></button>
       </form>
     </section>
 
     <!-- 4. Result -->
     <section id="result" class="result" aria-live="assertive" hidden>
+      <!-- Box-level audit: a recalled batch or an expired foil outranks every
+           interaction warning, so it renders above the verdict and speaks. -->
+      <div class="batch-banner" id="batch-banner" role="alert" hidden>
+        <p class="batch-banner-label" id="batch-banner-label"></p>
+        <ul class="batch-banner-list" id="batch-banner-list"></ul>
+      </div>
+
       <div class="verdict" id="verdict">
         <span class="verdict-icon" id="verdict-icon" aria-hidden="true"></span>
         <div class="verdict-text">

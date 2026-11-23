@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 23 November 2026
-**Build audited:** `v1.2.0` (Pass 27: `v1.1.9`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.3.0` (Pass 28: `v1.2.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -444,7 +444,92 @@ unchanged by construction and by test.
 
 ---
 
-**Overall: 9/10.** Points withheld for the two things this environment cannot
-certify: a live Groq extraction (no key exists here) and audible playback of
-real clips. Both are documented above rather than presented as verified. CI is
-written and locally proven, but no workflow run exists on GitHub until a push.
+## 14. Pass 29 — batch recall & expiry auditor
+
+The brief listed `app/recall.py` as existing. It did not, and nothing in the
+build read a batch number or an expiry date, so this pass built the module and
+wired it through extraction, the clinical pipeline, the API and the UI.
+
+### 14.1 What was added
+
+| Layer | Change |
+|---|---|
+| `app/recall.py` **(new)** | Expiry parser, batch matcher, four pilot recall notices, cold-chain table, and `audit(medicines, as_of)` returning localised findings |
+| `app/schemas.py` | `batch_no` / `expiry` on `ManualMedicine` and `ScannedMedicine` (validated, length-capped); `recall_warning` / `expiry_warning` on both responses; `recall_notices` on `/health` |
+| `tests/test_recall.py` **(new)** | 56 checks: parsing, matching, cold chain, copy, determinism, disk, API contract, validation |
+| `tests/js/recall.test.mjs` **(new)** | 13 DOM checks: banner order/colour/copy, ml+hi, no duplication, audio slot per code, typed batch |
+| `app/extraction.py` | The vision prompt now asks for `batch_number` and `expiry_date`; `_code()` clamps untrusted text to `[A-Z0-9 ./_-]`; reads carry both fields to the medicine |
+| `app/clinical.py` | One new rules pass, `recall.audit()` in `analyse()` (after the interaction table), plus an injectable `as_of` for tests |
+| `app/main.py` | `_flatten_flags` derives both booleans from the same findings tree; manual entry passes typed batch/expiry |
+| `static/index.html`, `app.js`, `styles.css` | Crimson/amber banner **above** the verdict (`role="alert"`), batch/expiry inputs on the manual form, a fourth demo preset |
+| `static/sw.js` | Cache `kathapulse-v5` → `v6` so phones pick up the new shell |
+
+Codes: `RECALLED_BATCH` (critical), `EXPIRED_STOCK` (critical), `EXPIRY_SOON`,
+`EXPIRY_UNREADABLE`, `COLD_CHAIN_RISK` (warning).
+
+### 14.2 Why this is not a duplicate of an existing check
+
+Every earlier rule operates on **molecules** — same salt, cumulative dose,
+interaction, class overlap, sound-alike. None of them can see the box: a
+perfectly legitimate, correctly dosed strip can still be a recalled lot or a
+foil that expired last year. The audit is also the only pass whose evidence is
+the printed batch and date rather than the composition, and the only one that
+fires on a single strip with no clinical finding at all.
+
+### 14.3 Measured behaviour
+
+| Probe | Result |
+|---|---|
+| `Glycomet 500`, batch `GM2407A`, expiry `09/2026` | `200`, verdict `critical`, findings `[RECALLED_BATCH, EXPIRED_STOCK]`, `recall_warning: true`, `expiry_warning: true` |
+| `Dolo 650`, batch `DL2511`, expiry `12/2026` | `200`, verdict `caution`, findings `[EXPIRY_SOON]` |
+| `Dolo 650`, no batch/expiry | no audit finding, no flag — unchanged for every existing client |
+| Batch `<script>alert(1)</script>` | `422` |
+| `expiry: "04/2026; DROP TABLE"` | `422` |
+| `/health` | `recall_notices: 4`, no feed body, no key material |
+| Banner in the DOM | crimson `role="alert"` block above the verdict, two items, Malayalam by default, Devanagari after a Hindi switch, absent on the Telma preset |
+| Speech | `safety_message_ml` / `_hi` / `_en` all carry the recall sentence; the pack is asked for `RECALLED_BATCH` and `EXPIRED_STOCK` clips per language |
+
+### 14.4 Verification
+
+```
+$ ./.venv/bin/pytest -o addopts="" -q
+206 passed, 1 warning in 5.00s
+$ cd tests/js
+state 18/18 · retry 4/4 · exif-scrub 15/15 · audio-pack 10/10
+AUDIOPACK 17/17 · presets 9/9 · recall 13/13        (86 frontend checks)
+```
+
+No pre-existing test was weakened to make room: the one test that changed
+(`test_vision.py`) failed because the vision read gained two fields, and it now
+asserts those fields explicitly, plus two new tests for a normalised batch and
+for control-character scrubbing.
+
+### 14.5 Scorecard against the Pass 29 checklist
+
+| Criterion | Verdict |
+|---|---|
+| Feature uniqueness — real clinical utility, no duplicate of existing checks | **Pass** — operates on the batch/date, which no molecule rule can see, and fires on single-strip cases the other passes ignore |
+| Zero disk persistence | **Pass** — batch/expiry ride the same in-RAM `bytes` request; `recall.audit` is a pure function and a test pins an empty temp directory after a full audit |
+| Zero regressions | **Pass** — 206 backend + 86 frontend, 0 failures, 0 skipped |
+| Multilingual audio | **Pass** — all five codes have ml/hi/en title, message and action; the script is spoken in the selected language and the pack has a clip key per `<lang>:<code>` |
+| Production readiness | **9/10** |
+
+### Honest limits of this pass
+
+* The recall feed is **four curated pilot notices** with local trace labels
+  (`PILOT-RCL-01`), not a CDSCO feed and not regulatory citations. The engine is
+  finished; the data is illustrative. That is stated in the module docstring,
+  the UI copy ("recall list"), the README and here.
+* Batch/expiry are only as good as what the vision tier reads. With no key in
+  this environment the photo path still degrades to manual entry, so the audit
+  is exercised through API and preset data — not through a photograph.
+* The banner was verified in a DOM (classes, order, copy, `role`) but **not
+  visually reviewed in a browser** in this pass.
+
+---
+
+**Overall: 9/10.** Points withheld for the things this environment cannot
+certify: a live Groq extraction (no key exists here), audible playback of real
+clips, the recall feed's regulatory provenance (pilot data only), and CI having
+run on GitHub (the workflow is syntax-checked and every command is run locally,
+but no push was authorised).
