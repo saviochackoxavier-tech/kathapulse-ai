@@ -351,8 +351,100 @@ TEXTS: dict[str, dict[str, str]] = {
         "ml": "ബാച്ച്, കാലഹരണ പരിശോധന",
         "hi": "बैच और एक्सपायरी जाँच",
     },
+    # -- age band (only when the request supplies an age) ------------------
+    "age.title": {
+        "en": "Age check needed",
+        "ml": "വയസ്സിനനുസരിച്ച് പരിശോധിക്കുക",
+        "hi": "उम्र के हिसाब से जाँच ज़रूरी",
+    },
+    "age.child.body": {
+        "en": "{name} is usually not given under {bound} years of age. The dose "
+              "has to be set by weight, not by age. Ask a paediatrician.",
+        "ml": "{name} {bound} വയസ്സിൽ താഴെയുള്ളവർക്ക് സാധാരണ നൽകാറില്ല. "
+              "ഭാരത്തിനനുസരിച്ചാണ് അളവ് നിശ്ചയിക്കേണ്ടത്. ശിശുരോഗ വിദഗ്ധനോട് "
+              "ചോദിക്കുക.",
+        "hi": "{name} आमतौर पर {bound} साल से छोटे बच्चों को नहीं दी जाती। खुराक "
+              "वज़न से तय होती है, उम्र से नहीं। बाल रोग विशेषज्ञ से पूछें।",
+    },
+    "age.elderly.body": {
+        "en": "{name} needs extra care from {bound} years. A lower dose is usual, "
+              "and the risk of dizziness, falls or low sugar is higher.",
+        "ml": "{name} {bound} വയസ്സിനു ശേഷം കൂടുതൽ ശ്രദ്ധയോടെ നൽകണം. കുറഞ്ഞ "
+              "അളവാണ് സാധാരണ. തലകറക്കം, വീഴ്ച, പഞ്ചാര കുറയൽ എന്നിവയുടെ സാധ്യത "
+              "കൂടും.",
+        "hi": "{name} {bound} साल के बाद ज़्यादा सावधानी से देनी चाहिए। आमतौर पर कम "
+              "खुराक दी जाती है। चक्कर, गिरना और शुगर कम होने का खतरा बढ़ता है।",
+    },
+    "age.action": {
+        "en": "Confirm the age and the dose with a doctor or pharmacist before giving it.",
+        "ml": "നൽകുന്നതിന് മുൻപ് ഡോക്ടറോടോ ഫാർമസിസ്റ്റിനോടോ വയസ്സും അളവും ഉറപ്പിക്കുക.",
+        "hi": "देने से पहले डॉक्टर या फार्मासिस्ट से उम्र और खुराक की पुष्टि करें।",
+    },
+    "kb.verified": {
+        "en": "Ground-Truth verified",
+        "ml": "ഗ്രൗണ്ട് ട്രൂത്ത് ഉറപ്പിച്ചത്",
+        "hi": "ग्राउंड-ट्रूथ से सत्यापित",
+    },
 }
 
+#: Ground-truth catalogue cautions (``GET /knowledge.json``); advisory text,
+#: never a diagnosis. Every key here is referenced by ``app.knowledge_base``.
+CAUTIONS: dict[str, dict[str, str]] = {
+    "pregnancy": {
+        "en": "Not for use in pregnancy without a doctor.",
+        "ml": "ഡോക്ടറുടെ നിർദ്ദേശമില്ലാതെ ഗർഭകാലത്ത് കഴിക്കരുത്.",
+        "hi": "डॉक्टर की सलाह के बिना गर्भावस्था में न लें।",
+    },
+    "kidney": {
+        "en": "Needs a dose review if the kidneys are unwell.",
+        "ml": "വൃക്ക രോഗമുണ്ടെങ്കിൽ അളവ് പുനഃപരിശോധിക്കണം.",
+        "hi": "गुर्दे की बीमारी में खुराक दोबारा तय करें।",
+    },
+    "ulcer": {
+        "en": "Can irritate the stomach lining and cause bleeding.",
+        "ml": "വയറ്റിലെ ആവരണത്തിൽ വ്രണമോ രക്തസ്രാവമോ ഉണ്ടാകാം.",
+        "hi": "पेट की परत में अल्सर या खून आ सकता है।",
+    },
+    "asthma": {
+        "en": "Can trigger wheezing in asthma.",
+        "ml": "ആസ്മയിൽ ശ്വാസംമുട്ടൽ ഉണ്ടാകാം.",
+        "hi": "अस्थमा में साँस की तकलीफ़ बढ़ सकती है।",
+    },
+    "heart_failure": {
+        "en": "Needs care in heart failure or a slow heart rate.",
+        "ml": "ഹൃദയസ്തംഭനത്തിലും മന്ദഹൃദയത്തിലും ശ്രദ്ധ വേണം.",
+        "hi": "हार्ट फेल्योर या धीमी धड़कन में सावधानी ज़रूरी।",
+    },
+    "liver": {
+        "en": "Needs care if the liver is unwell.",
+        "ml": "കരൾ രോഗമുണ്ടെങ്കിൽ ശ്രദ്ധ വേണം.",
+        "hi": "लिवर की बीमारी में सावधानी ज़रूरी।",
+    },
+    "drowsy": {
+        "en": "Can make you drowsy: avoid driving.",
+        "ml": "ഉറക്കം വരാം: വാഹനം ഓടിക്കരുത്.",
+        "hi": "नींद आ सकती है: गाड़ी न चलाएँ।",
+    },
+    "sun": {
+        "en": "Can make skin sensitive to sunlight.",
+        "ml": "ചർമ്മം വെയിലിൽ പെട്ടാൽ പൊള്ളലേൽക്കാം.",
+        "hi": "धूप में त्वचा जल सकती है।",
+    },
+    "low_sugar": {
+        "en": "Can drop blood sugar too low: eat on time.",
+        "ml": "പഞ്ചസാര വളരെ കുറയാം: സമയത്ത് ഭക്ഷണം കഴിക്കുക.",
+        "hi": "शुगर बहुत कम हो सकती है: समय पर खाएँ।",
+    },
+    "bleeding": {
+        "en": "Can increase bleeding: report unusual bruising.",
+        "ml": "രക്തസ്രാവം കൂടാം: അസാധാരണ ചതവ് അറിയിക്കുക.",
+        "hi": "खून बहना बढ़ सकता है: असामान्य नील पड़ना बताएँ।",
+    },
+}
+
+#: Fold the catalogue cautions into the same bundle, so ``t()`` has one lookup
+#: and the tri-lingual coverage test counts them like any other string.
+TEXTS.update({f"kb.caution.{key}": value for key, value in CAUTIONS.items()})
 #: Plain-language names for drug classes, used inside class-duplicate findings.
 CLASS_GROUP: dict[str, dict[str, str]] = {
     "nsaid": {"en": "painkiller of the same family", "ml": "ഒരേ കുടുംബത്തിലെ വേദനാസംഹാരി", "hi": "एक ही वर्ग की दर्द निवारक"},

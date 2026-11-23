@@ -21,11 +21,15 @@ you take two tablets that contain the same drug.
 5. Tap **Glycomet 500 · batch audit** → crimson banner *above* the verdict: the
    batch is on the recall list **and** the foil is past its expiry, spoken in
    Malayalam. This is the pharmacy audit path — it reads the box, not the dose.
-6. Switch the language selector to **हिन्दी** to see the identical findings, and
+6. Tap **Glycomet GP · ground truth** → **metformin + glimepiride** with a green
+   "Ground-Truth verified" line: the local database caught the second molecule
+   that a plain brand match drops.
+7. Switch the language selector to **हिन्दी** to see the identical findings, and
    the same spoken script, in Hindi.
 
-All four presets run through the deterministic engines only (clinical rules plus
-the offline batch audit), so they work with no vision key and no network egress. Real photos additionally need the
+All five presets run through the deterministic engines only (clinical rules, the
+offline batch audit and the local knowledge base), so they work with no vision
+key and no network egress. Real photos additionally need the
 optional vision or OCR tier — see [Configuration](#configuration).
 
 **Privacy in one line:** the browser strips EXIF before upload, the server
@@ -185,8 +189,9 @@ stateless, so scaling out is just more replicas behind the same origin.
 | Endpoint | Purpose |
 |---|---|
 | `POST /verify-strip` | multipart `image` + `language` (`ml`/`hi`/`en`) + `paracetamol_taken_today_mg` |
-| `POST /verify-medicines` | JSON `{medicines:[{name, batch_no?, expiry?}], language, paracetamol_taken_today_mg}` |
-| `GET /health` | which extraction tiers are live, taxonomy size, pilot recall-notice count |
+| `POST /verify-medicines` | JSON `{medicines:[{name, batch_no?, expiry?}], language, paracetamol_taken_today_mg, age_years?}` |
+| `GET /knowledge.json` | the ground-truth catalogue: brands, molecules, cautions, age bands (data only) |
+| `GET /health` | which extraction tiers are live, taxonomy size, recall-notice and knowledge-base counts |
 | `GET /` | the app shell |
 
 Response shape (abridged):
@@ -312,12 +317,72 @@ drug name — no patient identifier, no retention. The audit is a pure function
 over the scanned list (`as_of` injected for tests), and a test pins that it
 writes nothing to disk.
 
+## Ground-truth knowledge base (Pass 30)
+
+`app/knowledge_base.py` is the layer between "what molecule is this brand?" and
+"what does a pharmacist in Kochi actually call this box?". It is **offline,
+pure and deterministic**, and it does two jobs.
+
+### 1. A verified Kerala shelf catalogue
+
+48 curated products (Telma-H, Dolo 650, Amaryl, Glycomet-GP, Pan-D, Augmentin
+625, Zerodol-SP, Montair-LC, Ultracet, Thyronorm, Ecosprin, Warf, Doxy …) each
+with its exact molecules, Indian pack strengths, drug form, plain-language
+cautions and an age band. Every molecule is checked against `app/taxonomy.py` by
+a test, so the knowledge base can never name a drug the clinical engine cannot
+rule on. On top of the products sit all 48 molecules and their 186 printed
+aliases, giving **256 searchable names** for one 48-molecule engine.
+
+The catalogue is published as `GET /knowledge.json` — brands, molecules,
+cautions localised in ml/hi/en, age bands, pharmacist notes. Drug data only: no
+patient data, no keys, nothing request-specific.
+
+### 2. A deterministic fallback for imperfect text
+
+When the vision tier or OCR hands back text the alias table cannot place, the
+request is resolved locally instead of failing:
+
+| Printed (OCR / vision) | Alias table alone | Knowledge base |
+|---|---|---|
+| `Glycomet GP` | metformin **only** — the glimepiride is silently lost | metformin + glimepiride |
+| `PAN D` | nothing (combo key is `pan-d`) | pantoprazole + domperidone |
+| `Augmentn 625` | amoxicillin only | amoxicillin + clavulanic acid |
+| `Telma H` | combo miss, telmisartan only | telmisartan + HCTZ |
+
+Matching is **space- and dash-insensitive** (`glycometgp` = `Glycomet-GP`) and
+then falls back to a similarity score with a hard floor of 0.88. A *more
+specific* answer always wins: only a proper superset of molecules replaces the
+alias table's result, which is what turns the first row above from a dangerous
+half-answer into the right one. Below the floor the matcher returns nothing and
+the app keeps asking the user — it never invents a drug.
+
+Each medicine carries `verified_by: "taxonomy" | "ground_truth"`, and the
+response carries `ground_truth_verified`, so the UI can show a green
+**“Ground-Truth verified”** line only when the local base actually answered. The
+badge is quiet emerald by design: verification is reassurance, not a warning,
+and it must never compete with the crimson recall banner.
+
+### 3. Age bands, when (and only when) an age is supplied
+
+`age_years` (optional, 0–120) enables `AGE_WARNING`: aspirin under 16, NSAIDs and
+sulfonylureas from 65, fluoroquinolones under 18, benzodiazepines under 18 and
+from 65. With no age the rule is silent — assuming 70 for everyone would make
+every NSAID scan cry wolf, and assuming nothing is honest. The finding is
+localised, spoken, and gets its own audio-pack slot (`ml:AGE_WARNING`).
+
+**Resilience.** If the provider is unreachable the photo path returns `200`,
+`manual_required`, `verdict: unknown`, a localised read-aloud prompt and
+`processed_in_memory: true` — never a 500, never a blank screen, still zero disk
+writes. `tests/test_knowledge_base.py` proves that with a provider that raises
+`ConnectError` on every call.
+
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 206 backend: rules, LASA, accuracy, vision, dual-key failover, batch/recall/expiry audit, e2e, batch/offline/relay/hardening/ratelimit/audio
+./.venv/bin/pytest                 # 265 backend: rules, LASA, accuracy, vision, failover, batch audit, knowledge base, e2e, offline/relay/hardening/ratelimit/audio
 ./.venv/bin/pytest tests/test_failover.py   # 16 dual-key rotation checks on their own
 ./.venv/bin/pytest tests/test_recall.py     # 56 recall / expiry / cold-chain audit checks on their own
+./.venv/bin/pytest tests/test_knowledge_base.py  # 59 ground-truth matching, cautions, age bands and fallback checks
 cd tests/js && npm ci && npm test        # 15 EXIF-scrub checks (npm ci: the lockfile is committed)
 cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
 cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
@@ -325,6 +390,7 @@ cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scri
 cd tests/js && node audio-pack.test.mjs  # 10 audio-pack loader, script and fallback checks (no jsdom, no network)
 cd tests/js && node audiopack.test.mjs   # 17 DOM-level checks: app.js drives playScript, or falls back to speech in en/ml/hi
 cd tests/js && node recall.test.mjs      # 13 DOM-level checks: recall/expiry banner, ml+hi copy, pack slot per code, typed batch
+cd tests/js && node groundtruth.test.mjs # 12 DOM-level checks: verified badge in ml/hi, age warning + its clip, age sent request-level
 # Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
 # POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
 ```
@@ -343,7 +409,7 @@ two independent jobs so a backend failure does not hide a frontend one:
 | Job | Steps |
 |---|---|
 | **Backend** | Python 3.12 → `pip install -r requirements.txt` → `pytest` |
-| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the seven Node suites, one step each |
+| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the eight Node suites, one step each |
 
 The preset suite is the reason CI starts the server at all: it is the only test
 that talks to the real API. The app is started with **no** vision keys, so CI
@@ -357,7 +423,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **206 passed** (148 + 2 vision batch/expiry + 56 batch-audit checks) |
+| Backend suite | **265 passed** (206 + 59 knowledge-base checks) |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
@@ -366,10 +432,12 @@ Measured results from this build:
 | Live demo presets, real API + real DOM | **9/9 checks passed** — Telma pair, Dolo+Crocin and Amaryl each render the expected card (32 ms on the cold first call, then 7 ms and 4 ms), and the speech handoff carries the same Malayalam string the API returned |
 | Batch recall & expiry banner, real API + real DOM | **13/13 checks passed** — a recalled, expired batch renders a crimson `role="alert"` banner above the verdict in Malayalam and Hindi, is not repeated in the findings list, gets one audio clip per code, and the preset POSTs `batch_no`/`expiry`; a near-expiry box renders the same banner in amber |
 | Batch audit engine | **56/56 checks passed** — 15 printed expiry shapes parsed, 9 refused as unreadable, recall matching by molecule/brand/batch prefix, no claim without a batch, cold-chain flag, tri-lingual copy, deterministic date injection, nothing written to disk |
+| Ground-truth knowledge base | **59/59 checks passed** — 256 indexed names, every curated molecule exists in the taxonomy, `Glycomet GP` → metformin + glimepiride while the alias table answers one, OCR slips resolved, nonsense never matched, age bands only where a label states one, provider `ConnectError` → `200`/`manual_required`, no disk writes |
+| Verified badge + age rule in a DOM | **12/12 checks passed** — badge shown only for a ground-truth match, Malayalam and Hindi copy, age warning rendered amber and spoken, `AGE_WARNING` clip requested, age sent as a request field (never inside a medicine) |
 
 ## Demo presets
 
-Four one-click buttons above the camera run the pilot cases through
+Five one-click buttons above the camera run the pilot cases through
 `POST /verify-medicines`, so a live demo never depends on a camera, a steady
 hand, or a vision key:
 
@@ -378,6 +446,8 @@ hand, or a vision key:
 | Telma 40 + Telma-H | `critical` — duplicate telmisartan **and** LASA (same foil family) |
 | Dolo 650 + Crocin Cold & Flu | `critical` — dual paracetamol (1300 mg at once) |
 | Amaryl 1 mg | `caution` — LASA advisory: sounds like Amlopres, a different drug |
+| Glycomet 500 · batch audit (`GM2407A`, `09/2026`) | `critical` — recalled batch **and** an expired foil, in the banner above the verdict |
+| Glycomet GP · ground truth | `safe` — metformin + glimepiride verified locally, green badge shown |
 
 The third case is a **single-strip** LASA check: the curated sound-alike table
 also fires on one box, because the confusion happens before a second box exists.
@@ -808,6 +878,10 @@ language). Speech itself follows the selected language.
   detects the missing voice and says so instead of reading English aloud.
 * The taxonomy is a pilot subset, not a licensed drug database. Replace
   `app/taxonomy.py` with a CDSCO-style feed before any clinical deployment.
+* The knowledge base is a **curated pilot catalogue** (48 Kerala shelf products,
+  256 indexed names), not a licensed formulary. Every molecule is validated
+  against the taxonomy, but the cautions and age bands need a pharmacist's
+  review before a pilot depends on them.
 * The recall feed is **four curated pilot notices**, not a live regulator feed;
   every `ref` is a local trace label. The matching engine is finished and
 tested, the data is not — replace `app/recall.py:RECALLS` before a pilot relies

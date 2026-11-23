@@ -58,6 +58,11 @@
           <span class="preset-name">Glycomet 500 · batch audit</span>
           <span class="preset-tag">തിരിച്ചുവിളിക്കൽ · ബാച്ച്</span>
         </button>
+        <!-- Ground-truth demo: the local base resolves a spaced hybrid brand. -->
+        <button type="button" class="preset preset-safe" data-demo="ground-truth">
+          <span class="preset-name">Glycomet GP · ground truth</span>
+          <span class="preset-tag">മെറ്റ്ഫോർമിൻ + ഗ്ലിമെപിറൈഡ്</span>
+        </button>
       </div>
     </section>
 
@@ -128,6 +133,11 @@
             <input id="expiry-input" type="text" inputmode="text" autocomplete="off"
                    maxlength="20" placeholder="04/2027" />
           </label>
+          <label class="batch-field" for="age-input">
+            <span>Age in years · വയസ്സ്</span>
+            <input id="age-input" type="number" inputmode="numeric" autocomplete="off"
+                   min="0" max="120" placeholder="70" />
+          </label>
         </div>
         <button type="submit" class="btn btn-primary">പരിശോധിക്കുക <span class="btn-en">Check</span></button>
       </form>
@@ -149,6 +159,13 @@
           <p class="verdict-detail" id="verdict-detail"></p>
         </div>
       </div>
+
+      <!-- Verification provenance: shown only when the local ground truth
+           resolved the box, never as a decoration on every scan. -->
+      <p class="gt-badge" id="gt-badge" hidden>
+        <span class="gt-check" aria-hidden="true">✓</span>
+        <span id="gt-text"></span>
+      </p>
 
       <div class="speech-bar">
         <button type="button" id="speak" class="btn btn-speak">

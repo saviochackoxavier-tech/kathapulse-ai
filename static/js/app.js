@@ -60,6 +60,9 @@
     batchBannerList: document.getElementById("batch-banner-list"),
     batchInput: document.getElementById("batch-input"),
     expiryInput: document.getElementById("expiry-input"),
+    ageInput: document.getElementById("age-input"),
+    gtBadge: document.getElementById("gt-badge"),
+    gtText: document.getElementById("gt-text"),
   };
 
   let language = "ml";
@@ -96,6 +99,7 @@
       readAloudOffline: "ശബ്ദം ലഭ്യമല്ല — താഴെയുള്ളത് വായിക്കുക",
       errorTitle: "സാങ്കേതിക തകരാർ",
       batchLabel: "ബാച്ച്, കാലഹരണ പരിശോധന",
+      groundTruth: "ഗ്രൗണ്ട് ട്രൂത്ത് ഉറപ്പിച്ചത് · verified locally",
     },
     hi: {
       verdict: {
@@ -122,6 +126,7 @@
       readAloudOffline: "आवाज़ उपलब्ध नहीं — नीचे लिखा पढ़ें",
       errorTitle: "तकनीकी गड़बड़ी",
       batchLabel: "बैच और एक्सपायरी जाँच",
+      groundTruth: "ग्राउंड-ट्रूथ से सत्यापित · verified locally",
     },
     en: {
       verdict: {
@@ -148,6 +153,7 @@
       readAloudOffline: "Speech unavailable on this device — read the text below",
       errorTitle: "Something went wrong",
       batchLabel: "Batch & expiry check",
+      groundTruth: "Ground-Truth verified · offline database",
     },
   };
 
@@ -399,6 +405,14 @@
       });
     }
     els.matchedBox.open = medicines.length <= 3;
+
+    // Provenance: the local ground truth answered this box, not the model. Only
+    // shown when it actually happened, so the badge means something.
+    if (els.gtBadge) {
+      const verified = Boolean(payload.ground_truth_verified);
+      els.gtBadge.hidden = !verified;
+      els.gtText.textContent = verified ? t().groundTruth : "";
+    }
 
     els.disclaimer.textContent =
       (payload.disclaimer && (payload.disclaimer[language] || payload.disclaimer.en)) || "";
@@ -706,6 +720,14 @@
     return { batch_no: value(els.batchInput), expiry: value(els.expiryInput) };
   }
 
+  /** Patient age, only when a sane number was typed: it enables the age rule. */
+  function manualAge() {
+    const raw = els.ageInput && els.ageInput.value ? els.ageInput.value.trim() : "";
+    const years = Number(raw);
+    if (!raw || !Number.isFinite(years) || years < 0 || years > 120) return {};
+    return { age_years: Math.round(years) };
+  }
+
   /**
    * Scan a list of medicine names and render (or fail) exactly like a photo.
    *
@@ -714,8 +736,9 @@
    *        same scan by default.
    * @param {{batch_no: string, expiry: string}} [batch] printed batch/expiry,
    *        applied to every name in this scan (one shelf box, one batch).
+   * @param {object} [extra] request-level fields (age), never per medicine.
    */
-  async function runNamedScan(names, onRetry, batch) {
+  async function runNamedScan(names, onRetry, batch, extra) {
     if (State.isBusy(state) || !names || !names.length) return;
     const box = batch || { batch_no: "", expiry: "" };
 
@@ -736,12 +759,17 @@
         body: JSON.stringify({
           medicines: names.map((name) => ({ name, ...box })),
           language,
+          ...(extra || {}),
         }),
       });
       dispatch("UPLOAD_OK");
       renderResult(payload);
     } catch (err) {
-      failWith("UPLOAD_FAIL", err, onRetry || (() => runNamedScan(names, undefined, box)));
+      failWith(
+        "UPLOAD_FAIL",
+        err,
+        onRetry || (() => runNamedScan(names, undefined, box, extra))
+      );
     }
   }
 
@@ -750,7 +778,12 @@
     const names = parseManualNames();
     if (!names.length) return;
     // Retry re-submits the form, so an edit made after the failure is honoured.
-    return runNamedScan(names, () => els.manualForm.requestSubmit(), manualBatch());
+    return runNamedScan(
+      names,
+      () => els.manualForm.requestSubmit(),
+      manualBatch(),
+      manualAge()
+    );
   }
 
   // ---------------------------------------------------------------------
@@ -766,6 +799,9 @@
       batch_no: "GM2407A",
       expiry: "09/2026",
     },
+    // Ground truth: the alias table alone would answer "metformin" and drop the
+    // glimepiride, so the verified-database badge appears here.
+    "ground-truth": { names: ["Glycomet GP"] },
   };
 
   /** Run the preset behind a `data-demo` id; unknown ids are ignored. */

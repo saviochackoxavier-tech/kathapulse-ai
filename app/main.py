@@ -29,7 +29,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import clinical, config, extraction, i18n, ratelimit, recall, relay
+from . import (
+    clinical,
+    config,
+    extraction,
+    i18n,
+    knowledge_base,
+    ratelimit,
+    recall,
+    relay,
+)
 from .schemas import (
     ALLOWED_IMAGE_TYPES,
     MAX_IMAGE_BYTES,
@@ -179,6 +188,30 @@ async def taxonomy_feed() -> JSONResponse:
     )
 
 
+@app.get("/knowledge.json", include_in_schema=False)
+async def knowledge_feed() -> JSONResponse:
+    """Public ground-truth catalogue: brands, molecules, cautions, age bands.
+
+    Drug data only -- no patient data, no keys, nothing request-specific -- so a
+    pharmacist tool or the offline shell can read the same facts the server
+    verifies against. Localised cautions are included so a client never has to
+    translate a safety string itself.
+    """
+    entries = knowledge_base.catalogue()
+    counts = knowledge_base.stats()
+    return JSONResponse(
+        {
+            "version": app.version,
+            "count": len(entries),
+            "brands": counts["brands"],
+            "indexed_names": counts["indexed_names"],
+            "molecules": counts["molecules"],
+            "fuzzy_threshold": knowledge_base.FUZZY_MIN_SCORE,
+            "entries": entries,
+        }
+    )
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     engines = extraction.active_engines()
@@ -190,6 +223,8 @@ async def health() -> HealthResponse:
         ocr_engine=engines["ocr_engine"],
         taxonomy_ingredients=len(all_drugs()),
         recall_notices=len(recall.RECALLS),
+        knowledge_base_entries=knowledge_base.stats()["indexed_names"],
+        knowledge_base_brands=knowledge_base.stats()["brands"],
     )
 
 
@@ -198,11 +233,12 @@ async def health() -> HealthResponse:
 # ---------------------------------------------------------------------------
 
 
-def _flatten_flags(safety) -> dict:
+def _flatten_flags(safety, medicines: list) -> dict:
     """Derive the client's flat contract fields from the findings tree.
 
     Keeping one source of truth (the findings) avoids the classic drift where
-    a boolean flag and the message text disagree.
+    a boolean flag and the message text disagree. Verification provenance is the
+    one thing the findings cannot see, so it comes from the medicines.
     """
     codes = {finding.code for finding in safety.findings}
     return {
@@ -222,6 +258,10 @@ def _flatten_flags(safety) -> dict:
         "recall_warning": "RECALLED_BATCH" in codes,
         "expiry_warning": bool(
             codes & {"EXPIRED_STOCK", "EXPIRY_SOON", "EXPIRY_UNREADABLE"}
+        ),
+        "ground_truth_verified": any(
+            getattr(medicine, "verified_by", "") == "ground_truth"
+            for medicine in medicines
         ),
     }
 
@@ -256,6 +296,7 @@ async def verify_strip(
     image: UploadFile = File(..., description="Scrubbed strip photograph"),
     language: Language = Form(Language.malayalam),
     paracetamol_taken_today_mg: float = Form(0.0, ge=0, le=20000),
+    age_years: int | None = Form(None, ge=0, le=120),
 ) -> VerifyResponse:
     """Read a strip photograph and return localised safety findings.
 
@@ -268,7 +309,9 @@ async def verify_strip(
     if result.status == "manual_required" and not result.medicines:
         # Nothing legible: answer honestly and point the user at manual entry.
         first = clinical.ScannedMedicine(label="unreadable", matched=False, ingredients=[])
-        safety = clinical.analyse([first], language, paracetamol_taken_today_mg)
+        safety = clinical.analyse(
+            [first], language, paracetamol_taken_today_mg, age_years=age_years
+        )
         return VerifyResponse(
             extraction_status="manual_required",
             extraction_source=result.source,
@@ -277,11 +320,15 @@ async def verify_strip(
             disclaimer=i18n.language_text("disclaimer"),
             language=language,
             image_bytes_received=len(data),
-            **_flatten_flags(safety),
+            **_flatten_flags(safety, [first]),
         )
 
     safety = await run_in_threadpool(
-        clinical.analyse, result.medicines, language, paracetamol_taken_today_mg
+        clinical.analyse,
+        result.medicines,
+        language,
+        paracetamol_taken_today_mg,
+        age_years=age_years,
     )
     return VerifyResponse(
         extraction_status=result.status,  # type: ignore[arg-type]
@@ -291,7 +338,7 @@ async def verify_strip(
         disclaimer=i18n.language_text("disclaimer"),
         language=language,
         image_bytes_received=len(data),
-        **_flatten_flags(safety),
+        **_flatten_flags(safety, result.medicines),
     )
 
 
@@ -313,7 +360,10 @@ async def verify_medicines(payload: VerifyTextRequest) -> VerifyResponse:
         for index, item in enumerate(payload.medicines)
     ]
     safety = clinical.analyse(
-        medicines, payload.language, payload.paracetamol_taken_today_mg or 0.0
+        medicines,
+        payload.language,
+        payload.paracetamol_taken_today_mg or 0.0,
+        age_years=payload.age_years,
     )
     matched = sum(1 for m in medicines if m.matched)
     status = "ok" if matched == len(medicines) else ("partial" if matched else "manual_required")
@@ -324,7 +374,7 @@ async def verify_medicines(payload: VerifyTextRequest) -> VerifyResponse:
         safety=safety,
         disclaimer=i18n.language_text("disclaimer"),
         language=payload.language,
-        **_flatten_flags(safety),
+        **_flatten_flags(safety, medicines),
     )
 
 
@@ -338,6 +388,7 @@ async def verify_strips_batch(
     strips: list[UploadFile] = File(..., description="One photo per strip, 1-4 strips"),
     language: Language = Form(Language.malayalam),
     paracetamol_taken_today_mg: float = Form(0.0, ge=0, le=20000),
+    age_years: int | None = Form(None, ge=0, le=120),
 ) -> BatchVerifyResponse:
     """Read several strips for one basket and analyse them together.
 
@@ -373,7 +424,11 @@ async def verify_strips_batch(
         baskets.append(medicines)
 
     report = await run_in_threadpool(
-        clinical.analyse_basket, baskets, language, paracetamol_taken_today_mg
+        clinical.analyse_basket,
+        baskets,
+        language,
+        paracetamol_taken_today_mg,
+        age_years=age_years,
     )
     return BatchVerifyResponse(
         strip_count=len(results),
@@ -385,7 +440,7 @@ async def verify_strips_batch(
         disclaimer=i18n.language_text("disclaimer"),
         language=language,
         image_bytes_received=total_bytes,
-        **_flatten_flags(report.combined),
+        **_flatten_flags(report.combined, [m for strip in baskets for m in strip]),
     )
 
 

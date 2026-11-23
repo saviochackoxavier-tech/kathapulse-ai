@@ -3,6 +3,6 @@
   "version": "0",
   "generated": "2026-11-21",
   "voice": null,
-  "note": "No clips shipped yet. The player answers 'unavailable' and speech falls back to the device voice, then to the written warning. Record one clip per finding code (DUPLICATE_SALT, PARACETAMOL_DAILY_MAX, PARACETAMOL_NEAR_MAX, INTERACTION, DUPLICATE_CLASS, LASA_RISK, RECALLED_BATCH, EXPIRED_STOCK, EXPIRY_SOON, EXPIRY_UNREADABLE, COLD_CHAIN_RISK, UNRECOGNISED_MEDICINE, NO_DANGEROUS_OVERLAP) plus intro and outro, in each language (ml, hi, en), review them clinically, then bump version.",
+  "note": "No clips shipped yet. The player answers 'unavailable' and speech falls back to the device voice, then to the written warning. Record one clip per finding code (DUPLICATE_SALT, PARACETAMOL_DAILY_MAX, PARACETAMOL_NEAR_MAX, INTERACTION, DUPLICATE_CLASS, LASA_RISK, RECALLED_BATCH, EXPIRED_STOCK, EXPIRY_SOON, EXPIRY_UNREADABLE, COLD_CHAIN_RISK, AGE_WARNING, UNRECOGNISED_MEDICINE, NO_DANGEROUS_OVERLAP) plus intro and outro, in each language (ml, hi, en), review them clinically, then bump version.",
   "clips": {}
 }

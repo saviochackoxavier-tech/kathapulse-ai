@@ -104,6 +104,10 @@ jobs:
         working-directory: tests/js
         run: node recall.test.mjs
 
+      - name: Ground-truth badge and age rule in a DOM
+        working-directory: tests/js
+        run: node groundtruth.test.mjs
+
       - name: Live demo presets
         working-directory: tests/js
         run: node presets.test.mjs

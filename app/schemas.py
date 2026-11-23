@@ -166,6 +166,8 @@ class VerifyTextRequest(BaseModel):
     #: Paracetamol already taken today (mg).  Lets the engine catch a real
     #: cumulative-overdose pattern that a single strip scan cannot see.
     paracetamol_taken_today_mg: float | None = Field(default=None, ge=0, le=20000)
+    #: Patient age in years, optional. Only then can an age-band warning fire.
+    age_years: int | None = Field(default=None, ge=0, le=120)
 
     _validate_meds = field_validator("medicines")(lambda v: v)
 
@@ -200,6 +202,10 @@ class ScannedMedicine(BaseModel):
     #: them. Empty means "not available", never "no risk".
     batch_no: str = ""
     expiry: str = ""
+    #: Which layer verified the molecule: "taxonomy" (exact/fuzzy brand table)
+    #: or "ground_truth" (the local knowledge-base fallback). Empty when nothing
+    #: was verified, so the UI can never label a guess as verified.
+    verified_by: Literal["", "taxonomy", "ground_truth"] = ""
 
 
 class LanguageText(BaseModel):
@@ -260,6 +266,9 @@ class VerifyResponse(BaseModel):
     #: A recalled batch was matched, and/or an expiry problem was found.
     recall_warning: bool = False
     expiry_warning: bool = False
+    #: At least one medicine was verified by the local knowledge base rather
+    #: than the vision model / taxonomy alone.
+    ground_truth_verified: bool = False
 
 
 class StripReport(BaseModel):
@@ -294,6 +303,7 @@ class BatchVerifyResponse(BaseModel):
     lasa_risk: bool = False
     recall_warning: bool = False
     expiry_warning: bool = False
+    ground_truth_verified: bool = False
 
 
 class HealthResponse(BaseModel):
@@ -309,3 +319,7 @@ class HealthResponse(BaseModel):
     taxonomy_ingredients: int
     #: How many pilot recall notices the offline batch audit carries.
     recall_notices: int = 0
+    #: Searchable names in the local ground-truth knowledge base.
+    knowledge_base_entries: int = 0
+    #: Curated Kerala shelf products in that base.
+    knowledge_base_brands: int = 0

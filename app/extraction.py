@@ -30,7 +30,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from . import config, taxonomy
+from . import config, knowledge_base, taxonomy
 from .schemas import ExtractionSource, ResolvedIngredient, ScannedMedicine
 
 logger = logging.getLogger("kathapulse.extraction")
@@ -146,10 +146,33 @@ def resolve_medicine(
         )
 
     matches = taxonomy.lookup(haystack)
+    verified_by = "taxonomy" if matches else ""
+    fixed = dict(taxonomy.combo_members(haystack))
+
+    # Deterministic fallback: the local ground truth catches spacings, dashes and
+    # OCR slips the taxonomy's exact/fuzzy lookup lets through. It also wins when
+    # it is *more* specific: "Glycomet GP" contains the alias "glycomet", so the
+    # taxonomy answers metformin alone and would silently drop the glimepiride.
+    # Only a proper superset of molecules replaces the taxonomy's answer, and it
+    # can only return drugs the taxonomy already knows -- so a miss still leaves
+    # the honest "manual entry" path untouched.
+    resolution = knowledge_base.resolve(haystack)
+    if resolution:
+        kb_matches = tuple(
+            taxonomy.BY_CANONICAL[canonical]
+            for canonical in resolution.molecules
+            if canonical in taxonomy.BY_CANONICAL
+        )
+        if kb_matches and (
+            not matches
+            or {d.canonical for d in kb_matches} > {d.canonical for d in matches}
+        ):
+            matches = kb_matches
+            verified_by = "ground_truth"
+            fixed = fixed or dict(resolution.strengths)
 
     printed_strength = taxonomy.parse_strength(haystack)
-    combo = taxonomy.combo_members(haystack)
-    combo_strength = {canonical: strength for canonical, strength in combo}
+    combo_strength = fixed
 
     ingredients: list[ResolvedIngredient] = []
     for drug in matches:
@@ -174,6 +197,10 @@ def resolve_medicine(
         ingredients=ingredients,
         batch_no=batch_no,
         expiry=expiry,
+        # "taxonomy" or "ground_truth": which layer verified the molecule. The UI
+        # shows this, so a fallback-resolved strip is never passed off as a
+        # confident model read.
+        verified_by=verified_by if ingredients else "",
     )
 
 

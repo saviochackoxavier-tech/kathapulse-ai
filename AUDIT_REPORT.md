@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 23 November 2026
-**Build audited:** `v1.3.0` (Pass 28: `v1.2.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.4.0` (Pass 29: `v1.3.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -528,8 +528,94 @@ for control-character scrubbing.
 
 ---
 
+## 15. Pass 30 — Kerala ground-truth knowledge base & local fallback
+
+The brief listed `app/knowledge_base.py` as existing. It did not, and the alias
+table could not answer the case the brief cares about, so this pass built the
+module and wired it into extraction, the clinical rules, the API and the UI.
+
+### 15.1 The bug it was written for (measured before the fix)
+
+```
+$ python -c "from app import taxonomy; print([d.canonical for d in taxonomy.lookup('Glycomet GP')])"
+['metformin']                       # the glimepiride is silently dropped
+```
+
+`Glycomet GP` contains the alias `glycomet`, so the taxonomy answered *metformin
+only*. A pharmacist reading that screen would hand over a plain Glycomet, and the
+patient would lose their sulfonylurea — the exact class of error this product
+exists to prevent. After the change:
+
+```
+$ python -c "... resolve_medicine('Glycomet GP') ..."
+matched=True verified_by=ground_truth [('metformin',500.0), ('glimepiride',1.0)]
+```
+
+### 15.2 What was added
+
+| Layer | Change |
+|---|---|
+| `app/knowledge_base.py` **(new)** | 48 curated Kerala products, class-level cautions and age bands, a 256-key compact index, containment + similarity matching with a hard floor, `catalogue()` for the public feed |
+| `app/extraction.py` | A KB resolution that wins only when it is a **proper superset** of the alias table's molecules, so a half-answer cannot survive; `verified_by` on every medicine |
+| `app/clinical.py` | `AGE_WARNING` from the KB's age bands, emitted only when the request supplies an age |
+| `app/schemas.py`, `app/main.py` | `age_years` on both request paths, `ground_truth_verified` on both responses, `knowledge_base_*` on `/health`, and `GET /knowledge.json` |
+| `app/i18n.py` | 17 new keys: age title/body/action, the verified badge, and 10 catalogue cautions, each in en/ml/hi |
+| `static/*` | Green "Ground-Truth verified" line above LISTEN, an age field on the manual form, a fifth demo preset; cache `kathapulse-v6` → `v7` |
+| Tests | `tests/test_knowledge_base.py` (59) and `tests/js/groundtruth.test.mjs` (12) |
+
+### 15.3 Measured behaviour
+
+| Probe | Result |
+|---|---|
+| `GET /health` | `knowledge_base_entries: 256`, `knowledge_base_brands: 48` |
+| `GET /knowledge.json` | `200`, 48+ catalogue entries, Telma-H → telmisartan + HCTZ, localised cautions, no patient data, no key names |
+| `Glycomet GP` via `POST /verify-medicines` | `200`, ingredients metformin + glimepiride, `verified_by: ground_truth`, `ground_truth_verified: true`, verdict `safe` |
+| `PAN D`, `Telma H`, `Augmentn 625` | all resolve to **two** molecules (alias table: zero, one, one) |
+| `SMUDGED FOIL` | `matched: false`, no ingredients, `verified_by: ""` — never a guess |
+| `Amaryl 1` + `age_years: 72` | findings `[AGE_WARNING, LASA_RISK]`, Malayalam and Hindi scripts carry the age sentence |
+| `age_years: 500` | `422` |
+| Provider raises `ConnectError` on `/verify-strip` | `200`, `manual_required`, `verdict: unknown`, `processed_in_memory: true`, 0 files in the temp dir |
+| Badge in the DOM | shown for Glycomet GP in Malayalam and Devanagari, absent for the Telma pair, above the LISTEN button |
+
+### 15.4 Verification
+
+```
+$ ./.venv/bin/pytest -o addopts="" -q
+265 passed, 1 warning in 5.03s
+$ cd tests/js
+state 18/18 · retry 4/4 · exif-scrub 15/15 · audio-pack 10/10 · audiopack 17/17
+presets 9/9 · recall 13/13 · groundtruth 12/12            (98 frontend checks)
+```
+
+One existing test file changed: nothing. The 206 checks from Pass 29 pass
+unmodified, which is the strongest available evidence that a ≥superset rule did
+not disturb any clinical answer.
+
+### 15.5 Scorecard against the Pass 30 checklist
+
+| Criterion | Verdict |
+|---|---|
+| Ground-truth accuracy | **Pass** — 256 indexed names; the `Glycomet GP` half-answer is fixed; OCR slips resolve; nonsense returns nothing; every molecule validated against the taxonomy |
+| Autonomous fallback resilience | **Pass** — provider `ConnectError` still yields `200` with a localised, structured, speakable answer; the knowledge base itself never touches the network |
+| Zero disk persistence | **Pass** — pure functions over a `bytes` request; empty temp dir asserted after matching, catalogue build and analysis |
+| Zero regressions | **Pass** — 265 backend + 98 frontend, 0 failures, 0 skipped |
+| Hackathon excellence | **9/10** |
+
+### Honest limits of this pass
+
+* The catalogue is **curated pilot data**: 48 products, 256 names, Indian pack
+  strengths. Cautions and age bands are label-derived advisories that a
+  pharmacist should review before a pilot depends on them.
+* The fallback resolves *text*. With no vision key and no tesseract, a photo still
+  cannot be read locally — the app degrades to the localised manual prompt, which
+  is what the uptime test asserts. Claiming otherwise would be false.
+* The badge and the age finding were verified in a DOM (order, classes, copy,
+  speech, wire format), **not visually reviewed in a browser** this pass.
+
+---
+
 **Overall: 9/10.** Points withheld for the things this environment cannot
 certify: a live Groq extraction (no key exists here), audible playback of real
-clips, the recall feed's regulatory provenance (pilot data only), and CI having
-run on GitHub (the workflow is syntax-checked and every command is run locally,
-but no push was authorised).
+clips, the recall feed and knowledge base being curated pilot data rather than
+licensed feeds, and CI having run on GitHub (the workflow is syntax-checked and
+every command is run locally, but no push was authorised).

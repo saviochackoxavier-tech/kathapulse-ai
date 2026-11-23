@@ -14,8 +14,10 @@ Checks, in order of clinical priority:
                            (two NSAIDs, two ARBs, two sulfonylureas).
 5. ``BATCH_AUDIT``      -- recall, expiry and cold-chain checks on the *box*
                            (``app.recall``), not the combination.
-6. ``UNRECOGNISED``     -- anything the taxonomy could not verify.
-7. ``SAFE``             -- nothing found; still not a prescription check.
+6. ``AGE_WARNING``      -- an age outside the verified band from the local
+                           ground truth, but only when an age was supplied.
+7. ``UNRECOGNISED``     -- anything the taxonomy could not verify.
+8. ``SAFE``             -- nothing found; still not a prescription check.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 
-from . import i18n, recall, taxonomy
+from . import i18n, knowledge_base, recall, taxonomy
 from .schemas import (
     Finding,
     ResolvedIngredient,
@@ -421,6 +423,54 @@ def _lasa_findings(medicines: list[ScannedMedicine]) -> list[Finding]:
     return _dual_strip_lasa_findings(candidates) + _single_strip_lasa_findings(candidates)
 
 
+def _age_findings(
+    medicines: list[ScannedMedicine], age_years: int | None
+) -> list[Finding]:
+    """Age-band warnings from the ground-truth catalogue.
+
+    Fires **only** when the caller supplied an age: assuming 70 for everyone
+    would make every NSAID scan cry wolf, and assuming nothing is honest. One
+    finding per molecule, not per strip.
+    """
+    if age_years is None:
+        return []
+
+    findings: list[Finding] = []
+    seen: set[tuple[str, str]] = set()
+    for medicine in medicines:
+        for ingredient in medicine.ingredients:
+            kind = knowledge_base.age_conflicts(ingredient.canonical, age_years)
+            if kind is None:
+                continue
+            if (ingredient.canonical, kind) in seen:
+                continue
+            seen.add((ingredient.canonical, kind))
+
+            minimum, maximum = knowledge_base.age_band(ingredient.canonical)
+            bound = minimum if kind == "child" else maximum
+            findings.append(
+                Finding(
+                    code="AGE_WARNING",
+                    severity=Severity.warning,
+                    title=i18n.language_text("age.title"),
+                    message=LanguageText(
+                        **{
+                            lang: i18n.t(
+                                f"age.{kind}.body",
+                                lang,
+                                name=_name(ingredient, lang),
+                                bound=bound,
+                            )
+                            for lang in ("en", "ml", "hi")
+                        }
+                    ),
+                    action=i18n.language_text("age.action"),
+                    anchors=[ingredient.canonical],
+                )
+            )
+    return findings
+
+
 def _unknown_finding() -> Finding:
     return Finding(
         code="UNRECOGNISED_MEDICINE",
@@ -473,11 +523,13 @@ def analyse(
     language: Language,
     paracetamol_taken_today_mg: float = 0.0,
     as_of: date | None = None,
+    age_years: int | None = None,
 ) -> SafetyReport:
     """Run every guardrail and return a localised, speakable report.
 
     ``as_of`` is only for the batch/expiry audit; it exists so tests and audits
-    can pin the calendar instead of depending on the day they run.
+    can pin the calendar instead of depending on the day they run. ``age_years``
+    enables the age-band rule and is ``None`` unless the caller supplied it.
     """
     occurrences = _flatten(medicines)
 
@@ -486,6 +538,7 @@ def analyse(
     findings += _paracetamol_findings(occurrences, paracetamol_taken_today_mg)
     findings += _interaction_findings(occurrences)
     findings += recall.audit(medicines, as_of)
+    findings += _age_findings(medicines, age_years)
     findings += _duplicate_class_findings(occurrences)
     findings += _lasa_findings(medicines)
 
@@ -527,6 +580,7 @@ def analyse_basket(
     strips: list[list[ScannedMedicine]],
     language: Language,
     paracetamol_taken_today_mg: float = 0.0,
+    age_years: int | None = None,
 ) -> BasketReport:
     """Analyse each strip alone, then the whole basket as one set.
 
@@ -536,8 +590,11 @@ def analyse_basket(
     strip contributed what, not so they can be summed.
     """
     per_strip = [
-        analyse(strip, language, paracetamol_taken_today_mg) for strip in strips
+        analyse(strip, language, paracetamol_taken_today_mg, age_years=age_years)
+        for strip in strips
     ]
     everything = [medicine for strip in strips for medicine in strip]
-    combined = analyse(everything, language, paracetamol_taken_today_mg)
+    combined = analyse(
+        everything, language, paracetamol_taken_today_mg, age_years=age_years
+    )
     return BasketReport(per_strip=per_strip, combined=combined)
