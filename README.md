@@ -4,10 +4,17 @@ Dialect-aware medication safety companion for Kerala. Photograph a medicine
 strip, get a plain-language warning in Malayalam or Hindi — spoken aloud — before
 you take two tablets that contain the same drug.
 
-> **NeuraViz Stage 3/4 submission — POC v1.0.0.**
+> **NeuraViz AI Challenge 2026–27 — Stage 2 submission · working POC `v1.6.1`.**
+> Registration and idea submission close **31 January 2027** (organiser's extended
+> date; re-check the portal).
 > Team: `<team name>` · Contact: `<name> · <email>`
 > *(Replace the two placeholders above before submitting; everything else in this
 > file is final.)*
+>
+> **Submission pack:** [overview & competitor matrix](docs/SUBMISSION_OVERVIEW.md) ·
+> [clinical/translation/offline audit](docs/VALIDATION_REPORT.md) ·
+> [Stage 2 checklist & evidence pack](docs/NEURAVIZ_STAGE2_CHECKLIST.md) ·
+> clean source archive: `./scripts/make_submission_archive.sh`
 
 **Judges' 30-second demo — no camera, no API key, no configuration.**
 
@@ -569,6 +576,33 @@ cache is `kathapulse-v10`; the API version is `1.6.1`.
 `scripts/check_vision.py` reports `manual_required`), audible playback on a real
 device (headless Chromium has no ml-IN/hi-IN voice, so the UI correctly showed
 its fallback), and a real recall feed (the list is curated pilot data).
+
+## Submission pack (Pass 34)
+
+Documentation only — **no application code changed** in this pass. Three documents
+and one script make the project auditable without reading the history:
+
+| File | What it is for |
+|---|---|
+| `docs/SUBMISSION_OVERVIEW.md` | Problem/solution framing, verified file tree, **honest six-product comparison matrix** (Pill IQ, PharmaScan AI, MedLingual, MedScan, MedicineWatch India, DoseBell), privacy posture, limitations |
+| `docs/VALIDATION_REPORT.md` | Test-backed clinical interaction and paracetamol-ceiling audit, 81-key tri-lingual coverage, offline/rejection error handling, corrected failover description, residual risks |
+| `docs/NEURAVIZ_STAGE2_CHECKLIST.md` | Stage 2 alignment to the 31 January 2027 deadline, paste-ready 100-word summary, judge evidence checklist, manual capture steps, archive instructions |
+| `scripts/make_submission_archive.sh` | `git archive` ZIP from HEAD; refuses forbidden paths and real credential shapes |
+
+Three brief premises were corrected rather than copied into the docs:
+
+1. **"Headless sandbox cannot render Chromium screenshots"** — false here. Pass 33
+   rendered the app in cloud Chromium and measured 320 px (`305/305`) and 360 px
+   (`345/345`), zero overflow. The screenshots are git-ignored artefacts and can
+   be regenerated; a physical-phone check is still recommended.
+2. **"Dual-provider Groq-to-Gemini failover"** — the code supports a **second key**
+   for one OpenAI-compatible endpoint (`KATHA_VISION_API_KEY_FALLBACK`), with
+   rotation on 401/403/429. There is no Gemini adapter and none is claimed.
+3. **"DoseBell"** — no public product under that name could be verified. The
+   comparison table includes the row and says so, rather than inventing features.
+
+Counts in this build: **348 backend checks**, **119 frontend checks**, 48 molecules,
+256 indexed catalogue names, 4 curated recall notices, service worker `v10`.
 
 ## Tests
 
