@@ -3,7 +3,7 @@
 **Scope:** end-to-end audit of the running prototype (`0.0.0.0:3004`), plus a new
 permanent DOM-level integration test for the local audio pack.
 **Date:** 23 November 2026
-**Build audited:** `v1.6.0` (Pass 31: `v1.5.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
+**Build audited:** `v1.6.1` (Pass 33; Pass 32: `v1.6.0`), branch `freebuff/634aa3b468f03b91c44ddefa`
 
 ---
 
@@ -779,6 +779,62 @@ selector blocks (none), and `node --check` was run on the changed script.
   (1115 lines) with clearly marked sections; splitting it further is a refactor
   worth doing with a browser available.
 * Nothing was pushed, so CI remains locally executed (nine suites, all green).
+
+---
+
+## 18. Pass 33 — pre-submission hardening
+
+**Version:** `v1.6.1` · **service worker:** `kathapulse-v10` · **API `version`:** `1.6.1`
+
+### 18.1 What changed
+
+| Area | Change |
+|---|---|
+| Confidence | Vision contract asks `confidence: high\|medium\|low`. `low` is refused before matching; `medium` resolves but sets `recapture_required`, and the client holds the verdict at **Could not verify**, withholds the provenance badge and speaks the retake prompt instead of the safety script. Unreported confidence changes nothing. OCR derives `high` only for an exact catalogue entry. |
+| Explainable evidence | `VerifyResponse.evidence` — one row per strip with `name_status`, `strength_status`, `ingredient_status`, `source` and `verified_on` (`knowledge_base.CATALOGUE_VERIFIED_ON`). A molecule-default strength is `unverified`; a strength printed in the brand (`Dolo 650`) or in the combination record is `matched`. |
+| Pharmacovigilance | New tri-lingual `pharmacovigilance` key returned as `batch_disclaimer` on both response models and rendered inside the recall/expiry banner. |
+| Reminder audio | `doseAnnouncement()` in `reminders.js`: missing ml/hi voice → English audio instead of silence; the language label always matches the text; the dose text is printed in the banner. |
+| Layout defects | `select` min-width pushed 12px sideways at 320px; `display:flex` overrode `[hidden]`, showing an empty provenance badge and an empty cancel-reminder band. Both fixed. |
+
+### 18.2 Objective gates
+
+| Gate | Verdict | Evidence |
+|---|---|---|
+| Repository alignment | **Pass** | v1.6.0 inspected at `6fca2c8`; version `1.6.1`, SW cache `v10` |
+| Explainable evidence & disclaimers | **Pass** | `evidence` rows render in en/ml/hi; disclaimer on single and batch contracts |
+| Confidence calibration | **Pass** | low → `matched:false` + `rejection`; medium → provisional verdict + retake card; absent → unchanged |
+| Viewport & audio integrity | **Pass (see limits)** | measured `scrollWidth == clientWidth` at 320 (305/305) and 360 (345/345); announcement fallback covered by 5 new unit checks |
+| 100% suite green | **Pass** | 348 backend, 119 frontend, exit 0, no existing assertion changed |
+
+### 18.3 Verification actually run
+
+```
+$ ./.venv/bin/pytest -o addopts="" -q
+348 passed, 1 warning
+$ cd tests/js
+state 18/18 · retry 4/4 · exif-scrub 15/15 · audio-pack 10/10 · audiopack 17/17
+presets 9/9 · recall 13/13 · groundtruth 12/12 · reminders 21/21   (119 frontend checks)
+$ ./.venv/bin/python scripts/check_vision.py
+RESULT: FAIL — manual_required (no KATHA_VISION_API_KEY)
+```
+
+Viewport measurements were taken in cloud Chromium (not jsdom) with service-worker
+caches cleared, on the recalled-batch demo and on a stubbed medium-confidence
+response. Screenshots: `artifacts/viewport-320-batch.png`,
+`artifacts/viewport-320-recapture.png`, `artifacts/viewport-360-hindi.png`.
+
+### 18.4 Honest limits
+
+* No live vision extraction: `KATHA_VISION_API_KEY` is empty, so `/health` reports
+  `vision_keys: 0` and `check_vision.py` exits 1 with `manual_required`. The live
+  path was verified with stubbed tier output, not with Groq.
+* No audible playback: headless Chromium has no ml-IN/hi-IN voice, so the UI
+  correctly showed the "install the language voice" fallback. The announcement
+  selection logic is unit-tested; the sound itself was not heard.
+* Recall data remains a curated pilot list, and the knowledge base remains a
+  curated Kerala shelf catalogue; the evidence card names that provenance rather
+  than implying a licensed feed.
+* CI still has not run on GitHub (no push authorised).
 
 ---
 

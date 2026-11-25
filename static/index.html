@@ -150,6 +150,16 @@
       <div class="batch-banner" id="batch-banner" role="alert" hidden>
         <p class="batch-banner-label" id="batch-banner-label"></p>
         <ul class="batch-banner-list" id="batch-banner-list"></ul>
+        <!-- Pharmacovigilance caveat: an unflagged batch is not a safe batch. -->
+        <p class="batch-disclaimer" id="batch-disclaimer" hidden></p>
+      </div>
+
+      <!-- Confidence gate: a medium read keeps its candidate but asks for a
+           clearer photo; a low read was refused by the server and says so. -->
+      <div class="recapture-card" id="recapture-card" role="alert" hidden>
+        <h2 class="recapture-title" id="recapture-title"></h2>
+        <p class="recapture-text" id="recapture-text"></p>
+        <button type="button" id="recapture-btn" class="btn btn-primary"></button>
       </div>
 
       <div class="verdict" id="verdict">
@@ -189,6 +199,9 @@
       <!-- A live countdown belongs beside the verdict it was set from. -->
       <div class="reminder-banner" id="reminder-banner" hidden role="status">
         <p class="reminder-next" id="reminder-next"></p>
+        <!-- The announced dose is always on screen: a phone with no voice for
+             the selected language must still be able to read the reminder. -->
+        <p class="reminder-dose" id="reminder-dose" hidden></p>
         <button type="button" id="cancel-reminder" class="btn btn-ghost">
           ഓർമ്മപ്പെടുത്തൽ നിർത്തുക <span class="btn-en">Cancel</span>
         </button>
@@ -196,6 +209,13 @@
 
       <h2 class="visually-hidden">Warnings</h2>
       <ul class="findings" id="findings"></ul>
+
+      <!-- Explainable identification: which of name / strength / ingredient was
+           actually read, and which database (with its review date) answered. -->
+      <section class="evidence-card" id="evidence-card" hidden aria-labelledby="evidence-title">
+        <h2 class="evidence-title" id="evidence-title"></h2>
+        <ul class="evidence-list" id="evidence-list"></ul>
+      </section>
 
       <details class="matched-box" id="matched-box">
         <summary>Detected medicines · കണ്ടെത്തിയ മരുന്നുകൾ</summary>

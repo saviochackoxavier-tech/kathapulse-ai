@@ -70,5 +70,41 @@
     return now >= next.at - 1000;
   }
 
-  global.KathaPulseReminders = { nextDose, formatLeft, isDue, parseTime };
+  /**
+   * Which language and text a due dose should be announced in.
+   *
+   * A phone with no Malayalam/Hindi voice used to make the reminder silent,
+   * which is the one failure a dose alarm cannot have. When the selected
+   * language has no installed voice, the English recording is used instead; the
+   * caller still prints the text, so the dose is heard or read either way. The
+   * language is only relabelled when that fallback text really is English.
+   *
+   * @param {object} speech slot.speech: { en, ml, hi }
+   * @param {string} lang selected language code
+   * @param {boolean} hasVoice whether the device has a voice for `lang`
+   * @returns {{language: string, text: string} | null}
+   */
+  function doseAnnouncement(speech, lang, hasVoice) {
+    if (!speech) return null;
+    const voiceReady = lang === "en" || Boolean(hasVoice);
+    // Preferred order: the selected language; English when its voice is
+    // missing; then whatever the plan actually carries. The returned language
+    // always matches the text, so the synthesizer is never told to read
+    // Malayalam with a Hindi voice.
+    const order = voiceReady
+      ? [lang, "en", "ml", "hi"]
+      : ["en", lang, "ml", "hi"];
+    for (const code of order) {
+      if (speech[code]) return { language: code, text: speech[code] };
+    }
+    return null;
+  }
+
+  global.KathaPulseReminders = {
+    nextDose,
+    formatLeft,
+    isDue,
+    parseTime,
+    doseAnnouncement,
+  };
 })(window);

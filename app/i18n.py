@@ -230,6 +230,22 @@ TEXTS: dict[str, dict[str, str]] = {
         "hi": "कोई शंका हो तो फार्मासिस्ट से पूछें।",
     },
     # -- batch recall ------------------------------------------------------
+    # -- pharmacovigilance --------------------------------------------------
+    # Shown with every batch / recall result. A clean check means "not on the
+    # pilot list", never "safe": the app cannot test potency, sterility,
+    # authenticity or storage, and must not imply that it did.
+    "pharmacovigilance": {
+        "en": "A batch with no warning is not guaranteed to be safe, genuine, or "
+              "free from quality defects. This check covers the pilot recall "
+              "list and the printed dates only.",
+        "ml": "മുന്നറിയിപ്പില്ലാത്ത ബാച്ച് സുരക്ഷിതവും യഥാർത്ഥവുമാണെന്നോ "
+              "ഗുണനിലവാരക്കുറവില്ലെന്നോ ഉറപ്പ് നൽകുന്നില്ല. ഈ പരിശോധന "
+              "പൈലറ്റ് തിരിച്ചുവിളിക്കൽ പട്ടികയും അച്ചടിച്ച തീയതികളും "
+              "മാത്രം പരിശോധിക്കുന്നു.",
+        "hi": "जिस बैच पर कोई चेतावनी नहीं है, वह सुरक्षित, असली या गुणवत्ता "
+              "दोष से मुक्त होने की गारंटी नहीं है। यह जाँच केवल पायलट रिकॉल "
+              "सूची और छपी तारीख़ें देखती है।",
+    },
     "recall.title": {
         "en": "Recalled batch",
         "ml": "തിരിച്ചുവിളിച്ച ബാച്ച്",

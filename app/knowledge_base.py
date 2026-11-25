@@ -48,6 +48,12 @@ MIN_KEY_LEN = 4
 #: Shortest *input* worth fuzzy-matching at all.
 MIN_INPUT_LEN = 5
 
+#: The date this catalogue (``app.taxonomy`` plus the Kerala shelf list below)
+#: was last reviewed by hand.  The evidence card prints it beside "database
+#: verified": a provenance claim without a date is not provenance.  Bump it
+#: whenever ``PRODUCTS`` or the taxonomy change -- never without a review.
+CATALOGUE_VERIFIED_ON = "2026-11-25"
+
 
 @dataclass(frozen=True)
 class Product:

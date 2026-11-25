@@ -50,7 +50,12 @@ _VISION_PROMPT = (
     '"active_ingredients":["<molecule exactly as printed>"],'
     '"dosage_strength":"<e.g. 650 mg or 40 mg/12.5 mg>",'
     '"batch_number":"<batch printed after B.No./Batch/Lot, or empty>",'
-    '"expiry_date":"<printed expiry as MM/YYYY, or empty>"}]}. '
+    '"expiry_date":"<printed expiry as MM/YYYY, or empty>",'
+    '"confidence":"<high|medium|low>"}]}. '
+    "confidence is your own certainty that the printed name and strength were "
+    "read correctly. Use low when the foil is blurred, cropped, glared or "
+    "unreadable; medium when you can read the name but not the strength with "
+    "confidence. Never inflate it. "
     "One object per physical strip or box visible. Max 4 objects, max 4 ingredients each. "
     "Copy only text you can actually see; never guess, never add commentary, "
     "never invent a molecule, a batch number or a date. "
@@ -75,6 +80,9 @@ class _VisionMedicine(BaseModel):
     #: the clinical rules never do, and an unread foil must not fail the scan.
     batch_number: str = Field(default="", max_length=40)
     expiry_date: str = Field(default="", max_length=40)
+    #: The model's own certainty. Optional by design: a model that does not
+    #: report one must not be treated as either confident or unsure.
+    confidence: str = Field(default="", max_length=12)
 
     # Tolerated aliases: older prompts used label/names.
     label: str = Field(default="", max_length=200)
@@ -100,6 +108,10 @@ class _VisionMedicine(BaseModel):
         """Printed expiry, or "" -- ``app.recall`` decides what it means."""
         return _code(self.expiry_date)
 
+    def as_confidence(self) -> str:
+        """Normalised confidence: "high" | "medium" | "low" | ""."""
+        return _confidence_level(self.confidence)
+
 
 class _VisionResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -114,6 +126,64 @@ class Extraction:
     status: str  # "ok" | "partial" | "manual_required"
 
 
+class _Read(tuple):
+    """One raw read from a tier: the four positional fields, plus confidence.
+
+    Deliberately a ``tuple`` subclass rather than a five-element tuple: every
+    existing caller (and ``tests/test_vision.py``) unpacks a read as
+    ``label, names, batch, expiry``, and that contract does not change just
+    because a tier can now also say how sure it was.  ``confidence`` is "" for
+    a tier that has nothing meaningful to report (or an old model reply).
+    """
+
+    confidence: str = ""
+
+    def __new__(
+        cls,
+        label: str,
+        names: list[str],
+        batch: str = "",
+        expiry: str = "",
+        confidence: str = "",
+    ) -> "_Read":
+        read = super().__new__(cls, (label, list(names), batch, expiry))
+        read.confidence = confidence
+        return read
+
+
+def _label_states_strength(label: str, matches: tuple) -> bool:
+    """True when the printed label itself carries the resolved pack strength.
+
+    "Dolo 650" prints its strength in the brand name (no "mg" for
+    :func:`taxonomy.parse_strength` to read), and a 650 mg default is exactly
+    what that number means.  Only a number that matches a resolved molecule's
+    own pack strength counts -- a random digit in the text is not a dose.
+    """
+    numbers = {float(value) for value in re.findall(r"\d+(?:\.\d+)?", str(label or ""))}
+    if not numbers:
+        return False
+    return any(
+        drug.default_strength is not None and drug.default_strength in numbers
+        for drug in matches
+    )
+
+
+def _confidence_level(value: str) -> str:
+    """Map a tier's free-text certainty onto the three levels we act on.
+
+    Anything unrecognised becomes "": a model that says "pretty sure" has not
+    said high, and pretending otherwise would promote a shaky read.
+    """
+    text = _clean(value).lower()
+    if text.startswith("h") or text in {"1", "0.9", "certain"}:
+        return "high"
+    if text.startswith("m") or text in {"0.6", "0.7", "0.8"}:
+        return "medium"
+    if text.startswith("l"):
+        return "low"
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Resolution: raw printed text -> taxonomy molecules
 # ---------------------------------------------------------------------------
@@ -125,13 +195,33 @@ def resolve_medicine(
     strip_index: int,
     batch_no: str = "",
     expiry: str = "",
+    confidence: str = "",
 ) -> ScannedMedicine:
     """Map printed text onto the taxonomy, keeping printed strengths.
 
     ``batch_no`` and ``expiry`` are carried through untouched: they belong to
     the box, not to the molecule, and the batch audit reads them verbatim.
+
+    ``confidence`` is the reading tier's own certainty.  A **low** read is
+    refused before any matching happens: a blurred foil that happens to sit one
+    character away from a brand must never become a safety verdict.  A
+    **medium** read still resolves -- the text is there to match -- but is
+    flagged ``recapture`` so the UI asks for a clearer photo instead of
+    presenting the guess as done.
     """
     haystack = " ".join([label, *raw_names]).strip()
+    certainty = _confidence_level(confidence)
+
+    if certainty == "low":
+        return ScannedMedicine(
+            label=label or (raw_names[0] if raw_names else f"Strip {strip_index + 1}"),
+            matched=False,
+            ingredients=[],
+            batch_no=batch_no,
+            expiry=expiry,
+            confidence="low",
+            rejection="low_confidence",
+        )
 
     # A brand we recognise but refuse to resolve (Loprin-LS): stop here rather
     # than letting a long-alias match quietly attribute Loprin's molecule to it.
@@ -174,6 +264,15 @@ def resolve_medicine(
     printed_strength = taxonomy.parse_strength(haystack)
     combo_strength = fixed
 
+    if combo_strength:
+        strength_source = "combo"  # the brand's fixed-combination record
+    elif printed_strength is not None or _label_states_strength(label, matches):
+        strength_source = "printed"  # read off this foil
+    elif matches:
+        strength_source = "default"  # only the molecule's usual pack strength
+    else:
+        strength_source = ""
+
     ingredients: list[ResolvedIngredient] = []
     for drug in matches:
         strength = combo_strength.get(drug.canonical)
@@ -201,6 +300,9 @@ def resolve_medicine(
         # shows this, so a fallback-resolved strip is never passed off as a
         # confident model read.
         verified_by=verified_by if ingredients else "",
+        confidence=certainty,
+        strength_source=strength_source if ingredients else "",
+        recapture=certainty == "medium" and bool(ingredients),
     )
 
 
@@ -215,7 +317,10 @@ def build_medicines(reads: list[tuple]) -> list[ScannedMedicine]:
         label, names = read[0], read[1]
         batch_no = read[2] if len(read) > 2 else ""
         expiry = read[3] if len(read) > 3 else ""
-        medicines.append(resolve_medicine(label, names, index, batch_no, expiry))
+        confidence = getattr(read, "confidence", "")
+        medicines.append(
+            resolve_medicine(label, names, index, batch_no, expiry, confidence)
+        )
     return medicines
 
 
@@ -317,8 +422,8 @@ async def _read_with_key(
 
 async def _vision_extract(
     image_bytes: bytes, content_type: str
-) -> list[tuple[str, list[str]]] | None:
-    """Return [(label, names)] or None if the vision tier is unavailable."""
+) -> list[tuple] | None:
+    """Return one ``_Read`` per strip, or None if the tier is unavailable."""
     cfg = config.vision_settings()  # re-read per request: no restart needed
     keys = cfg.api_keys()
     if not keys:
@@ -372,12 +477,20 @@ async def _vision_extract(
         logger.warning("vision output unparseable (%s), trying next tier", type(exc).__name__)
         return None
 
-    results: list[tuple[str, list[str], str, str]] = []
+    results: list[tuple] = []
     for item in parsed.medicines:
         label = item.as_label()
         names = item.as_names()
         if label or names:
-            results.append((label, names, item.as_batch(), item.as_expiry()))
+            results.append(
+                _Read(
+                    label,
+                    names,
+                    item.as_batch(),
+                    item.as_expiry(),
+                    item.as_confidence(),
+                )
+            )
     return results or None
 
 
@@ -386,7 +499,18 @@ async def _vision_extract(
 # ---------------------------------------------------------------------------
 
 
-def _ocr_extract(image_bytes: bytes) -> list[tuple[str, list[str]]] | None:
+def _ocr_confidence(line: str) -> str:
+    """How much OCR's own reading can be trusted for one line.
+
+    OCR has no self-reported certainty, so it is derived from the only evidence
+    available: whether the line is an *exact* catalogue entry (containment hit,
+    no fuzzy step).  A line that only matched approximately is a medium read and
+    the UI asks for a retake; nothing is silently promoted to "high".
+    """
+    return "high" if knowledge_base.resolve(line, fuzzy=False) else "medium"
+
+
+def _ocr_extract(image_bytes: bytes) -> list[tuple] | None:
     if not config.ocr_enabled():
         return None
 
@@ -410,10 +534,10 @@ def _ocr_extract(image_bytes: bytes) -> list[tuple[str, list[str]]] | None:
         return None
 
     # Each OCR line that resolves to a molecule becomes one "strip".
-    found: list[tuple[str, list[str]]] = []
+    found: list[tuple] = []
     for line in lines[:10]:
         if taxonomy.lookup(line):
-            found.append((line, [line]))
+            found.append(_Read(line, [line], "", "", _ocr_confidence(line)))
     return found or None
 
 

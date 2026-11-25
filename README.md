@@ -477,16 +477,103 @@ Long Malayalam molecule names break inside finding titles and messages
 because a `320px` column cannot fit `ഹൈഡ്രോക്ലോറോത്തയാസൈഡ്` whole and sideways
 scrolling is worse.
 
-**Not verified:** the layout was reasoned about and the CSS is brace-balanced and
-free of duplicate selectors, but **no screenshot or pixel measurement at 320px was
-taken** — this sandbox has no browser engine beyond jsdom, which does not lay out.
-The copy, ordering, visibility and classes are asserted by the DOM suites; the
-spacing is not.
+**Pass 32 note (superseded):** that pass could not measure the layout — jsdom
+does not lay out and there was no browser engine. Pass 33 measured it (below).
+
+## Pre-submission hardening (Pass 33)
+
+Pass 33 adds no subsystem. It makes three claims the product already implied
+actually checkable, and it measures the layout Pass 32 could only reason about.
+
+### Explainable identification
+
+Every scan now returns one `evidence` row per strip with a **field-level**
+status, not a score:
+
+| Field | "matched" / "verified" means |
+|---|---|
+| Medicine name | the label resolved **and** the reading tier did not report itself unsure |
+| Strength | the number came from the foil (including a strength printed in the brand, `Dolo 650`) or from the brand's fixed-combination record — never from a molecule default |
+| Active ingredient | a database confirmed the molecule, and the row names which one (`taxonomy` or `ground_truth`) and the catalogue's review date (`knowledge_base.CATALOGUE_VERIFIED_ON`) |
+
+The card renders under the warnings (safety keeps its place under the verdict).
+A molecule-level default strength shows as **Unverified**, because the camera did
+not read it.
+
+### Confidence gate
+
+The vision prompt now asks for `confidence: high|medium|low` per strip:
+
+| Reported | Behaviour |
+|---|---|
+| `low` | refused **before matching** (`rejection: low_confidence`, `matched: false`); the UI says the scan was rejected and asks for a new photo |
+| `medium` | the molecules still resolve, but `recapture_required` is set: the verdict is held at **Could not verify**, the green provenance badge is withheld, and the retake prompt is what LISTEN reads |
+| absent / unrecognised | nothing changes — a model that reports nothing is neither promoted nor rejected |
+
+OCR has no self-report, so its confidence is derived honestly: a line that is an
+exact catalogue entry is `high`; anything that needed the fuzzy step is `medium`.
+Manual entry carries no confidence at all.
+
+### Pharmacovigilance caveat
+
+`batch_disclaimer` (tri-lingual, `i18n` key `pharmacovigilance`) ships on both
+`VerifyResponse` and `BatchVerifyResponse` and renders inside the batch/recall
+banner: *"A batch with no warning is not guaranteed to be safe, genuine, or free
+from quality defects. This check covers the pilot recall list and the printed
+dates only."*
+
+### Reminder audio across three languages
+
+The dose announcement is now a pure function in `reminders.js`
+(`doseAnnouncement(speech, lang, hasVoice)`). When the selected language has no
+installed voice it falls back to the English recording, and the chosen language
+label always follows the text actually read — the synthesizer is never told to
+pronounce Malayalam with a Hindi voice. The dose text is also printed in the
+banner, so a phone with no voice pack is never silent.
+
+### Measured layout (real browser, not jsdom)
+
+Measured in the cloud Chromium at both widths, on the recalled-batch demo and on
+a stubbed medium-confidence response, with service-worker caches cleared:
+
+| Viewport | `scrollWidth` / `clientWidth` | Overflow | Notes |
+|---|---|---|---|
+| 320px | **305 / 305** | none | batch banner, caveat, evidence card, recapture card all render; smallest tap target 58px |
+| 360px | **345 / 345** | none | Hindi evidence card and provenance line, no overflow |
+
+Two real defects were found **only** by looking:
+
+1. `select#pattern` kept its `min-width: auto` longest option and pushed the page
+   12px sideways at 320px. `.reminder-row > *` now has `min-width: 0;
+   max-width: 100%`.
+2. `.gt-badge { display: flex }` and `.reminder-banner { display: flex }`
+   overrode the `[hidden]` attribute, leaving an empty green check badge (and an
+   empty cancel-reminder band) on every result screen. `[hidden] { display: none
+   !important }` makes the attribute win.
+
+### Verification
+
+```
+$ ./.venv/bin/pytest -o addopts="" -q
+348 passed, 1 warning
+$ cd tests/js
+state 18/18 · retry 4/4 · exif-scrub 15/15 · audio-pack 10/10 · audiopack 17/17
+presets 9/9 · recall 13/13 · groundtruth 12/12 · reminders 21/21   (119 frontend checks)
+```
+
+`tests/test_confidence_evidence.py` (16 checks) is new; `reminders.test.mjs`
+gained 5 announcement checks. No existing assertion was changed. Service-worker
+cache is `kathapulse-v10`; the API version is `1.6.1`.
+
+**Still not verified:** a live Groq extraction (no key in this environment —
+`scripts/check_vision.py` reports `manual_required`), audible playback on a real
+device (headless Chromium has no ml-IN/hi-IN voice, so the UI correctly showed
+its fallback), and a real recall feed (the list is curated pilot data).
 
 ## Tests
 
 ```bash
-./.venv/bin/pytest                 # 332 backend: rules, LASA, accuracy, vision, failover, batch audit, knowledge base, dose reminders, e2e, offline/relay/hardening/ratelimit/audio
+./.venv/bin/pytest                 # 348 backend: rules, LASA, accuracy, vision, failover, batch audit, knowledge base, dose reminders, confidence/evidence, e2e, offline/relay/hardening/ratelimit/audio
 ./.venv/bin/pytest tests/test_failover.py   # 16 dual-key rotation checks on their own
 ./.venv/bin/pytest tests/test_recall.py     # 56 recall / expiry / cold-chain audit checks on their own
 ./.venv/bin/pytest tests/test_knowledge_base.py  # 59 ground-truth matching, cautions, age bands and fallback checks
@@ -499,7 +586,7 @@ cd tests/js && node audio-pack.test.mjs  # 10 audio-pack loader, script and fall
 cd tests/js && node audiopack.test.mjs   # 17 DOM-level checks: app.js drives playScript, or falls back to speech in en/ml/hi
 cd tests/js && node recall.test.mjs      # 13 DOM-level checks: recall/expiry banner, ml+hi copy, pack slot per code, typed batch
 cd tests/js && node groundtruth.test.mjs # 12 DOM-level checks: verified badge in ml/hi, age warning + its clip, age sent request-level
-cd tests/js && node reminders.test.mjs   # 16 checks: the clock arithmetic, panel, POST body, countdown banner, refusals, cancel
+cd tests/js && node reminders.test.mjs   # 21 checks: the clock arithmetic, tri-lingual announcement fallback, panel, POST body, countdown banner, refusals, cancel
 # Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
 # POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
 ```
@@ -532,7 +619,7 @@ Measured results from this build:
 
 | Check | Result |
 |---|---|
-| Backend suite | **332 passed** (265 + 67 reminder checks) |
+| Backend suite | **348 passed** (265 + 67 reminder + 16 confidence/evidence checks) |
 | Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
 | EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
 | Client state machine + error surface | **18/18 checks passed** |
@@ -540,7 +627,8 @@ Measured results from this build:
 | Audio pack wiring, real DOM (Passes 24-25) | **17/17 checks passed** — clips present → `playScript` runs intro/findings/outro and the device voice stays silent; clips missing → nothing half-plays and the device voice takes over |
 | Live demo presets, real API + real DOM | **9/9 checks passed** — Telma pair, Dolo+Crocin and Amaryl each render the expected card (32 ms on the cold first call, then 7 ms and 4 ms), and the speech handoff carries the same Malayalam string the API returned |
 | Batch recall & expiry banner, real API + real DOM | **13/13 checks passed** — a recalled, expired batch renders a crimson `role="alert"` banner above the verdict in Malayalam and Hindi, is not repeated in the findings list, gets one audio clip per code, and the preset POSTs `batch_no`/`expiry`; a near-expiry box renders the same banner in amber |
-| Dose reminders, pure clock + real DOM | **16/16 checks passed** — the next slot rolls to tomorrow when today's has passed, `SET` posts only `{name}` per medicine, a scheduled plan paints a localised countdown banner, an SOS refusal paints none, cancel clears it, and a new scan cannot inherit the old plan |
+| Dose reminders, pure clock + real DOM | **21/21 checks passed** — the next slot rolls to tomorrow when today's has passed, `SET` posts only `{name}` per medicine, a scheduled plan paints a localised countdown banner, an SOS refusal paints none, cancel clears it, a new scan cannot inherit the old plan, and a missing ml/hi voice falls back to English audio instead of silence |
+| Confidence gate + evidence, API + real DOM | **16/16 backend checks** — a low-confidence read is refused before matching, a medium one is flagged for retake with a provisional verdict, evidence never marks a default strength as read, provenance carries the database and review date, and the pharmacovigilance caveat ships tri-lingual on both single and batch responses |
 | Batch audit engine | **56/56 checks passed** — 15 printed expiry shapes parsed, 9 refused as unreadable, recall matching by molecule/brand/batch prefix, no claim without a batch, cold-chain flag, tri-lingual copy, deterministic date injection, nothing written to disk |
 | Ground-truth knowledge base | **59/59 checks passed** — 256 indexed names, every curated molecule exists in the taxonomy, `Glycomet GP` → metformin + glimepiride while the alias table answers one, OCR slips resolved, nonsense never matched, age bands only where a label states one, provider `ConnectError` → `200`/`manual_required`, no disk writes |
 | Verified badge + age rule in a DOM | **12/12 checks passed** — badge shown only for a ground-truth match, Malayalam and Hindi copy, age warning rendered amber and spoken, `AGE_WARNING` clip requested, age sent as a request field (never inside a medicine) |

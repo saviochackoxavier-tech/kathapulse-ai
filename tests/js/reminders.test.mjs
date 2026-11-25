@@ -98,6 +98,39 @@ await test("isDue fires at the dose time, not before", () => {
   assert.equal(clock.R.isDue(null, now), false);
 });
 
+// The dose announcement itself (Pass 33): a missing voice pack must never turn
+// a reminder into silence, and the language label must not lie.
+const SPEECH = { en: "Time for your dose.", ml: "ഡോസ് സമയമായി.", hi: "खुराक का समय।" };
+
+await test("doseAnnouncement speaks Malayalam when the phone has the voice", () => {
+  const picked = clock.R.doseAnnouncement(SPEECH, "ml", true);
+  assert.equal(picked.language, "ml");
+  assert.match(picked.text, MALAYALAM);
+});
+
+await test("doseAnnouncement speaks Hindi when the phone has the voice", () => {
+  const picked = clock.R.doseAnnouncement(SPEECH, "hi", true);
+  assert.equal(picked.language, "hi");
+  assert.match(picked.text, DEVANAGARI);
+});
+
+await test("a missing ml voice falls back to English audio, never silence", () => {
+  const picked = clock.R.doseAnnouncement(SPEECH, "ml", false);
+  assert.equal(picked.language, "en");
+  assert.equal(picked.text, SPEECH.en);
+});
+
+await test("a missing hi voice still announces the dose text", () => {
+  const picked = clock.R.doseAnnouncement({ ml: SPEECH.ml }, "hi", false);
+  assert.equal(picked.text, SPEECH.ml);
+  assert.equal(picked.language, "ml"); // the label follows the text actually read
+});
+
+await test("doseAnnouncement survives a plan without speech", () => {
+  assert.equal(clock.R.doseAnnouncement(null, "ml", false), null);
+  assert.equal(clock.R.doseAnnouncement({}, "en", true), null);
+});
+
 // ---------------------------------------------------------------------------
 // 2. Harness
 // ---------------------------------------------------------------------------

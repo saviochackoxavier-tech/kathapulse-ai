@@ -16,6 +16,8 @@
   --void: #060a0f;
   --void-2: #080e15;
   --panel: #0d1520;
+  /* layout containers below use display:flex; the attribute must win so a
+     "hidden" badge or reminder banner cannot linger as an empty band. */
   --panel-2: #121d2b;
   --line: #22303f;
 
@@ -391,6 +393,8 @@ textarea::placeholder { color: #6b7d99; }
   box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
 }
 
+[hidden] { display: none !important; }
+
 .speech-warning {
   margin: 0 0 12px; padding: 12px 14px;
   background: var(--amber-bg); color: var(--amber-text);
@@ -435,8 +439,13 @@ textarea::placeholder { color: #6b7d99; }
   text-transform: uppercase; color: #9df5cf;
 }
 .reminder-row { display: flex; gap: 10px; flex-wrap: wrap; }
+/* A <select> has min-width:auto, so its longest option ("every 8 hours")
+   refused to shrink and pushed the whole page 12px sideways at 320px. The
+   control may now shrink with its column and never exceed it. */
+.reminder-row > * { min-width: 0; max-width: 100%; }
 .reminder-row select {
   flex: 1 1 160px;
+  width: 100%;
   min-height: var(--tap);
   padding: 8px 10px;
   font-family: inherit; font-size: 17px; font-weight: 700;
@@ -631,6 +640,75 @@ textarea::placeholder { color: #6b7d99; }
 .matched-box li { margin-bottom: 4px; overflow-wrap: break-word; }
 .matched-box .unmatched { color: #ffa3b3; font-weight: 700; }
 
+/* --------------------------------------------- explainable identification */
+
+/* Three facts per strip, each marked with whether it was actually read. The
+   card is deliberately quiet: it explains the match, it does not compete with
+   the warning list above it. */
+.evidence-card {
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--emerald-deep);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  background: var(--panel);
+}
+.evidence-title {
+  margin: 0 0 10px;
+  font-size: 15px; font-weight: 900; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--text-dim);
+  overflow-wrap: break-word;
+}
+.evidence-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.evidence-row { border-top: 1px solid var(--line); padding-top: 10px; }
+.evidence-row:first-child { border-top: 0; padding-top: 0; }
+.evidence-label {
+  margin: 0 0 6px; font-size: 18px; font-weight: 900;
+  color: var(--text); overflow-wrap: break-word;
+}
+.evidence-fields { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.evidence-field {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap; font-size: 16px;
+}
+.evidence-term { color: var(--text-dim); font-weight: 700; }
+.evidence-field strong { font-weight: 900; }
+.evidence-field.is-ok strong { color: #9df5cf; }
+.evidence-field.is-unverified strong { color: var(--amber-text); }
+.evidence-source {
+  margin: 6px 0 0; font-size: 14px; line-height: 1.4;
+  color: var(--text-dim); overflow-wrap: break-word;
+}
+
+/* ------------------------------------------------ confidence / recapture */
+
+.recapture-card {
+  border: 2px solid rgba(245, 158, 11, 0.6);
+  border-left: 8px solid var(--amber);
+  border-radius: 12px;
+  padding: 14px;
+  margin: 0 0 14px;
+  background: var(--amber-bg);
+}
+.recapture-title {
+  margin: 0 0 8px; font-size: 21px; font-weight: 900;
+  color: var(--amber-text); overflow-wrap: break-word;
+}
+.recapture-text { margin: 0 0 12px; font-size: 18px; color: var(--text); }
+.recapture-card .btn { width: 100%; }
+
+.batch-disclaimer {
+  margin: 12px 0 0; padding-top: 10px;
+  border-top: 1px solid rgba(232, 241, 248, 0.22);
+  font-size: 15px; line-height: 1.45; color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.reminder-dose {
+  flex: 1 1 100%; margin: 0; font-size: 17px; font-weight: 700;
+  color: #c9ffe9; overflow-wrap: break-word;
+}
+
 .disclaimer { font-size: 15px; color: var(--text-dim); margin: 0 0 6px; }
 .memory-proof { font-size: 14px; font-weight: 700; margin: 0; color: #9df5cf; }
 
@@ -664,5 +742,7 @@ textarea::placeholder { color: #6b7d99; }
   .verdict-label { font-size: 22px; }
   .scan-frame { display: none; }
   .reminder-row > * { flex: 1 1 100%; }
+  .reminder-row select { width: 100%; }
   .reminder-banner .btn { flex: 1 1 100%; }
+  .evidence-field { align-items: flex-start; }
 }

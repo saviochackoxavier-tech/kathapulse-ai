@@ -206,6 +206,38 @@ class ScannedMedicine(BaseModel):
     #: or "ground_truth" (the local knowledge-base fallback). Empty when nothing
     #: was verified, so the UI can never label a guess as verified.
     verified_by: Literal["", "taxonomy", "ground_truth"] = ""
+    #: How sure the reader was of this strip, when that tier can say so. Empty
+    #: means the tier reported nothing (manual entry, a legacy model): the read
+    #: is neither promoted nor rejected on a confidence nobody expressed.
+    confidence: Literal["", "high", "medium", "low"] = ""
+    #: Where the strength came from: the printed foil ("printed"), the brand's
+    #: fixed-combination record ("combo"), or only the molecule's usual pack
+    #: strength ("default"). The evidence card reports a default as unverified.
+    strength_source: Literal["", "printed", "combo", "default"] = ""
+    #: A medium-confidence read: the molecules resolved, but the photo was not
+    #: clear enough to trust without a retake.
+    recapture: bool = False
+    #: Why this strip was refused outright. Empty means it was not refused.
+    rejection: Literal["", "low_confidence"] = ""
+
+
+class MedicineEvidence(BaseModel):
+    """One line of the explainable-identification card.
+
+    Field-level status, not a score: the client shows exactly which of the three
+    facts behind a match were actually read, which were only inferred from the
+    catalogue, and which could not be confirmed.
+    """
+
+    label: str
+    name_status: Literal["matched", "unverified"]
+    strength_status: Literal["matched", "unverified"]
+    ingredient_status: Literal["verified", "unverified"]
+    #: Which database answered (empty when nothing was verified).
+    source: Literal["", "taxonomy", "ground_truth"] = ""
+    #: ISO date of the last manual review of that database; empty if unverified.
+    verified_on: str = ""
+    confidence: Literal["", "high", "medium", "low"] = ""
 
 
 class LanguageText(BaseModel):
@@ -270,6 +302,18 @@ class VerifyResponse(BaseModel):
     #: than the vision model / taxonomy alone.
     ground_truth_verified: bool = False
 
+    # -- explainable identification ---------------------------------------
+    #: One entry per scanned strip: which of name / strength / ingredient was
+    #: actually confirmed, plus the provenance of the database that confirmed it.
+    evidence: list[MedicineEvidence] = Field(default_factory=list)
+    #: A medium-confidence read needs a clearer photo before it is trusted.
+    recapture_required: bool = False
+    #: A low-confidence read was refused outright, never mapped to a medicine.
+    low_confidence_rejected: bool = False
+    #: Pharmacovigilance caveat for every recall / batch audit: an unflagged
+    #: batch is not evidence of safety, authenticity or quality.
+    batch_disclaimer: LanguageText
+
 
 class StripReport(BaseModel):
     """One strip inside a batch, analysed on its own."""
@@ -304,6 +348,9 @@ class BatchVerifyResponse(BaseModel):
     recall_warning: bool = False
     expiry_warning: bool = False
     ground_truth_verified: bool = False
+
+    #: The same pharmacovigilance caveat every batch audit carries.
+    batch_disclaimer: LanguageText
 
 
 class HealthResponse(BaseModel):

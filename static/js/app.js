@@ -65,6 +65,14 @@
     batchBanner: document.getElementById("batch-banner"),
     batchBannerLabel: document.getElementById("batch-banner-label"),
     batchBannerList: document.getElementById("batch-banner-list"),
+    batchDisclaimer: document.getElementById("batch-disclaimer"),
+    recaptureCard: document.getElementById("recapture-card"),
+    recaptureTitle: document.getElementById("recapture-title"),
+    recaptureText: document.getElementById("recapture-text"),
+    recaptureBtn: document.getElementById("recapture-btn"),
+    evidenceCard: document.getElementById("evidence-card"),
+    evidenceTitle: document.getElementById("evidence-title"),
+    evidenceList: document.getElementById("evidence-list"),
     batchInput: document.getElementById("batch-input"),
     expiryInput: document.getElementById("expiry-input"),
     ageInput: document.getElementById("age-input"),
@@ -77,6 +85,7 @@
     reminderMsg: document.getElementById("reminder-msg"),
     reminderBanner: document.getElementById("reminder-banner"),
     reminderNext: document.getElementById("reminder-next"),
+    reminderDose: document.getElementById("reminder-dose"),
     cancelReminderBtn: document.getElementById("cancel-reminder"),
   };
 
@@ -124,6 +133,28 @@
         h: " മണിക്കൂർ",
         m: " മിനിറ്റ്",
       },
+      evidence: {
+        title: "തിരിച്ചറിയൽ തെളിവ് · Identification evidence",
+        name: "മരുന്നിന്റെ പേര്",
+        strength: "അളവ്",
+        ingredient: "ഘടകം",
+        matched: "ഉറപ്പിച്ചു",
+        unverified: "സ്ഥിരീകരിച്ചിട്ടില്ല",
+        verified: "ഡാറ്റാബേസിൽ ഉറപ്പിച്ചു",
+        source: {
+          taxonomy: "പ്രാദേശിക ടാക്സോണമി പട്ടിക",
+          ground_truth: "കേരള ഗ്രൗണ്ട് ട്രൂത്ത് കാറ്റലോഗ്",
+        },
+        verifiedOn: (date) => `${date} തീയതിയിൽ പരിശോധിച്ചത്`,
+      },
+      recapture: {
+        title: "വ്യക്തമായ ഫോട്ടോ വീണ്ടും എടുക്കുക",
+        medium:
+          "ഈ ഫോട്ടോ വ്യക്തമെന്ന് ഉറപ്പില്ല. താഴെയുള്ള ഫലം വിശ്വസിക്കുന്നതിന് മുൻപ് നല്ല വെളിച്ചത്തിൽ ഒന്നുകൂടി ഫോട്ടോ എടുക്കുക.",
+        low:
+          "ഫോട്ടോ വ്യക്തമല്ലാത്തതിനാൽ മരുന്ന് തിരിച്ചറിയാൻ കഴിഞ്ഞില്ല; ഇത് നിരസിച്ചു. അടുത്ത് ചെന്ന്, പ്രതിഫലനം ഒഴിവാക്കി വീണ്ടും എടുക്കുക.",
+        button: "വീണ്ടും ഫോട്ടോ എടുക്കുക",
+      },
     },
     hi: {
       verdict: {
@@ -160,6 +191,28 @@
         h: " घंटे",
         m: " मिनट",
       },
+      evidence: {
+        title: "पहचान का प्रमाण · Identification evidence",
+        name: "दवा का नाम",
+        strength: "ताकत",
+        ingredient: "सक्रिय तत्व",
+        matched: "मिलान हुआ",
+        unverified: "सत्यापित नहीं",
+        verified: "डेटाबेस से सत्यापित",
+        source: {
+          taxonomy: "स्थानीय टैक्सोनॉमी सूची",
+          ground_truth: "केरल ग्राउंड-ट्रूथ कैटलॉग",
+        },
+        verifiedOn: (date) => `${date} को जाँचा गया`,
+      },
+      recapture: {
+        title: "साफ़ फ़ोटो फिर से लें",
+        medium:
+          "यह फ़ोटो पक्का पढ़ी नहीं गई। नीचे के नतीजे पर भरोसा करने से पहले अच्छी रोशनी में फिर से फ़ोटो लें।",
+        low:
+          "फ़ोटो साफ़ न होने से दवा नहीं पहचानी जा सकी, इसलिए इसे अस्वीकार किया गया। पास आकर, चमक से बचकर फिर से लें।",
+        button: "फिर से फ़ोटो लें",
+      },
     },
     en: {
       verdict: {
@@ -195,6 +248,28 @@
         due: (time) => `${time} — time for your dose.`,
         h: " h",
         m: " min",
+      },
+      evidence: {
+        title: "Identification evidence",
+        name: "Medicine name",
+        strength: "Strength",
+        ingredient: "Active ingredient",
+        matched: "Matched",
+        unverified: "Unverified",
+        verified: "Database verified",
+        source: {
+          taxonomy: "Local taxonomy table",
+          ground_truth: "Kerala ground-truth catalogue",
+        },
+        verifiedOn: (date) => `verified ${date}`,
+      },
+      recapture: {
+        title: "Retake a clearer photo",
+        medium:
+          "This photo was not clear enough to confirm the medicine. Take another one in good light before trusting the result below.",
+        low:
+          "The photo was too unclear to identify any medicine, so the scan was rejected. Move closer, avoid glare, and take it again.",
+        button: "Retake photo",
       },
     },
   };
@@ -378,13 +453,121 @@
     });
   }
 
+  /**
+   * The pharmacovigilance caveat under a batch/recall result.
+   *
+   * Always shown with the banner, including when the batch is *not* flagged:
+   * "no notice matched" must never read as "this box is safe". The text comes
+   * from the server so all three languages stay in one place.
+   */
+  function renderBatchCaveat(payload) {
+    if (!els.batchDisclaimer) return;
+    const text = localised(payload && payload.batch_disclaimer);
+    els.batchDisclaimer.textContent = text;
+    els.batchDisclaimer.hidden = !text || !els.batchBanner || els.batchBanner.hidden;
+  }
+
+  /** One status word, coloured by whether it was actually confirmed. */
+  function evidenceField(term, status, copy) {
+    const item = document.createElement("li");
+    const confirmed = status === "matched" || status === "verified";
+    item.className = "evidence-field " + (confirmed ? "is-ok" : "is-unverified");
+
+    const label = document.createElement("span");
+    label.className = "evidence-term";
+    label.textContent = term;
+
+    const value = document.createElement("strong");
+    value.textContent =
+      status === "matched"
+        ? copy.matched
+        : status === "verified"
+          ? copy.verified
+          : copy.unverified;
+
+    item.appendChild(label);
+    item.appendChild(value);
+    return item;
+  }
+
+  /**
+   * Explainable identification: name / strength / ingredient, per strip.
+   *
+   * The server decides each status (it owns what was actually read); this only
+   * renders it. An old cached payload without `evidence` simply hides the card
+   * instead of inventing ticks.
+   */
+  function renderEvidence(payload) {
+    if (!els.evidenceCard) return;
+    const rows = (payload && payload.evidence) || [];
+    const copy = t().evidence;
+
+    els.evidenceList.textContent = "";
+    if (!rows.length) {
+      els.evidenceCard.hidden = true;
+      return;
+    }
+
+    els.evidenceTitle.textContent = copy.title;
+    rows.forEach((row) => {
+      const item = document.createElement("li");
+      item.className = "evidence-row";
+
+      const label = document.createElement("p");
+      label.className = "evidence-label";
+      label.textContent = row.label || "—";
+      item.appendChild(label);
+
+      const fields = document.createElement("ul");
+      fields.className = "evidence-fields";
+      fields.appendChild(evidenceField(copy.name, row.name_status, copy));
+      fields.appendChild(evidenceField(copy.strength, row.strength_status, copy));
+      fields.appendChild(evidenceField(copy.ingredient, row.ingredient_status, copy));
+      item.appendChild(fields);
+
+      if (row.ingredient_status === "verified" && row.source) {
+        const source = document.createElement("p");
+        source.className = "evidence-source";
+        const database = copy.source[row.source] || row.source;
+        source.textContent = row.verified_on
+          ? `${database} · ${copy.verifiedOn(row.verified_on)}`
+          : database;
+        item.appendChild(source);
+      }
+
+      els.evidenceList.appendChild(item);
+    });
+
+    els.evidenceCard.hidden = false;
+  }
+
+  /** The confidence gate: retake the photo instead of trusting a shaky read. */
+  function renderRecapture(payload) {
+    if (!els.recaptureCard) return;
+    const required = Boolean(payload && payload.recapture_required);
+    els.recaptureCard.hidden = !required;
+    if (!required) return;
+
+    const copy = t().recapture;
+    els.recaptureTitle.textContent = copy.title;
+    els.recaptureText.textContent = payload.low_confidence_rejected
+      ? copy.low
+      : copy.medium;
+    els.recaptureBtn.textContent = copy.button;
+  }
+
   function renderResult(payload) {
     // The run is over: clear the "checking" line here so both the photo and the
     // named-scan paths leave no stale busy text under a finished verdict.
     setStatus("", null);
     lastPayload = payload;
     const safety = payload.safety || {};
-    const verdict = safety.verdict || "unknown";
+    // A medium-confidence read is a candidate, not a finding: presenting its
+    // "safe" verdict in green would be the exact guess the retake prompt is
+    // there to prevent. The status is held at "unknown" until a clearer photo
+    // is read; the warnings it did produce stay visible below.
+    const provisional = Boolean(payload.recapture_required);
+    const verdict = provisional ? "unknown" : safety.verdict || "unknown";
     const copy = t().verdict[verdict] || t().verdict.unknown;
 
     els.verdict.className = "verdict " + verdict;
@@ -408,6 +591,8 @@
     // the verdict; everything else stays in the findings list below it.
     const allFindings = safety.findings || [];
     renderBatchBanner(allFindings.filter((finding) => BATCH_CODES[finding.code]));
+    renderBatchCaveat(payload);
+    renderRecapture(payload);
 
     els.findings.textContent = "";
     allFindings
@@ -447,10 +632,17 @@
     }
     els.matchedBox.open = medicines.length <= 3;
 
+    // Identification evidence sits after the warnings: the safety list keeps
+    // its place directly under the verdict on a small phone, and the evidence
+    // explains the match without competing with it.
+    renderEvidence(payload);
+
     // Provenance: the local ground truth answered this box, not the model. Only
     // shown when it actually happened, so the badge means something.
     if (els.gtBadge) {
-      const verified = Boolean(payload.ground_truth_verified);
+      // "verified" is withheld while the read is provisional: the badge would
+      // otherwise contradict the retake card right above it.
+      const verified = Boolean(payload.ground_truth_verified) && !provisional;
       els.gtBadge.hidden = !verified;
       els.gtText.textContent = verified ? t().groundTruth : "";
     }
@@ -478,8 +670,13 @@
     els.memoryProof.textContent = t().memory;
 
     // The script is always rendered: this is the offline fallback when the
-    // device has no ml-IN / hi-IN voice.
-    const script = spokenTextFor(payload);
+    // device has no ml-IN / hi-IN voice. A provisional read speaks the retake
+    // request instead of a safety script nobody has confirmed yet.
+    const script = provisional
+      ? payload.low_confidence_rejected
+        ? t().recapture.low
+        : t().recapture.medium
+      : spokenTextFor(payload);
     els.spokenScript.textContent = script;
     els.spokenPanel.hidden = !script;
     els.spokenPanel.classList.remove("is-fallback");
@@ -520,6 +717,10 @@
     reminderLabels = "";
     reminderDueAt = 0;
     if (els.reminderBanner) els.reminderBanner.hidden = true;
+    if (els.reminderDose) {
+      els.reminderDose.hidden = true;
+      els.reminderDose.textContent = "";
+    }
   }
 
   /** Show (or refresh) the countdown to the next dose, in the chosen language. */
@@ -542,12 +743,33 @@
     reminderDueAt = next.at;
   }
 
-  /** Speak the dose and, when the phone allows it, post a local notification. */
+  /**
+   * Speak the dose and, when the phone allows it, post a local notification.
+   *
+   * A selected language with no installed voice used to mean a silent reminder
+   * -- the one failure a dose alarm cannot have. It now falls back to the
+   * English audio and always prints the dose, so the reminder is heard or read
+   * whichever voice packs the phone happens to carry.
+   */
   function announceDose(slot) {
     const speech = slot && slot.speech;
-    const text = speech ? speech[language] || speech.en : "";
-    if (!text) return;
-    Promise.resolve(Speech.speak(text, language)).catch(() => undefined);
+    if (!speech) return;
+
+    const hasVoice = Boolean(Speech && Speech.hasVoiceFor(language));
+    const announcement =
+      typeof Reminders.doseAnnouncement === "function"
+        ? Reminders.doseAnnouncement(speech, language, hasVoice)
+        : { language, text: speech[language] || speech.en || "" };
+    if (!announcement || !announcement.text) return;
+    const text = announcement.text;
+
+    if (els.reminderDose) {
+      els.reminderDose.hidden = false;
+      els.reminderDose.textContent = text;
+    }
+    if (Speech) {
+      Promise.resolve(Speech.speak(text, announcement.language)).catch(() => undefined);
+    }
     if (typeof Notification !== "undefined" && Notification.permission === "granted") {
       try {
         new Notification(t().reminder.title, { body: text, tag: "kathapulse-dose" });
@@ -1038,6 +1260,10 @@
 
   // Dose reminders: schedule for the scan on screen, cancel at any time.
   if (els.scheduleBtn) els.scheduleBtn.addEventListener("click", scheduleReminder);
+  // A refused or shaky read asks for a clearer photo: reopen the picker.
+  if (els.recaptureBtn) {
+    els.recaptureBtn.addEventListener("click", () => els.fileInput.click());
+  }
   if (els.cancelReminderBtn) {
     els.cancelReminderBtn.addEventListener("click", () => {
       clearReminder();

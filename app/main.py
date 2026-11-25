@@ -47,6 +47,7 @@ from .schemas import (
     BatchVerifyResponse,
     HealthResponse,
     Language,
+    MedicineEvidence,
     StripReport,
     VerifyResponse,
     VerifyTextRequest,
@@ -64,7 +65,7 @@ app = FastAPI(
         "Dialect-aware medication safety and strip verification. "
         "Images are processed in RAM only and never stored."
     ),
-    version="1.0.0",
+    version="1.6.1",
 )
 
 
@@ -267,6 +268,48 @@ def _flatten_flags(safety, medicines: list) -> dict:
     }
 
 
+def _evidence(medicines: list) -> list[MedicineEvidence]:
+    """The explainable-identification card, one row per scanned strip.
+
+    Every status is a fact the server already holds, never a cosmetic tick:
+
+    * **name** -- only "matched" when the label actually resolved *and* the
+      reading tier did not say it was unsure.  A medium-confidence read is
+      shown as unverified because that is what it is.
+    * **strength** -- "matched" only when the number came from the foil or the
+      brand's fixed-combination record.  A molecule's usual pack strength is a
+      catalogue default, so it is reported as unverified rather than presented
+      as something the camera read.
+    * **ingredient** -- "verified" with the database that answered and the date
+      that database was last reviewed, so the claim can be audited.
+    """
+    rows: list[MedicineEvidence] = []
+    for medicine in medicines:
+        confidence = getattr(medicine, "confidence", "") or ""
+        verified_by = getattr(medicine, "verified_by", "") or ""
+        strength_source = getattr(medicine, "strength_source", "") or ""
+        certain = bool(medicine.matched) and confidence not in {"medium", "low"}
+
+        rows.append(
+            MedicineEvidence(
+                label=medicine.label or "—",
+                name_status="matched" if certain else "unverified",
+                strength_status=(
+                    "matched"
+                    if certain and strength_source in {"printed", "combo"}
+                    else "unverified"
+                ),
+                ingredient_status=("verified" if certain and verified_by else "unverified"),
+                source=verified_by if certain else "",
+                verified_on=(
+                    knowledge_base.CATALOGUE_VERIFIED_ON if certain and verified_by else ""
+                ),
+                confidence=confidence,
+            )
+        )
+    return rows
+
+
 def _status_for(medicines: list) -> str:
     """``ok`` / ``partial`` / ``manual_required`` from how many boxes resolved."""
     matched = sum(1 for medicine in medicines if medicine.matched)
@@ -297,6 +340,17 @@ def _verify_response(
         disclaimer=i18n.language_text("disclaimer"),
         language=language,
         image_bytes_received=image_bytes_received,
+        evidence=_evidence(medicines),
+        recapture_required=any(
+            getattr(medicine, "recapture", False)
+            or getattr(medicine, "rejection", "")
+            for medicine in medicines
+        ),
+        low_confidence_rejected=any(
+            getattr(medicine, "rejection", "") == "low_confidence"
+            for medicine in medicines
+        ),
+        batch_disclaimer=i18n.language_text("pharmacovigilance"),
         **_flatten_flags(safety, medicines),
     )
 
@@ -461,6 +515,7 @@ async def verify_strips_batch(
         ],
         combined=report.combined,
         disclaimer=i18n.language_text("disclaimer"),
+        batch_disclaimer=i18n.language_text("pharmacovigilance"),
         language=language,
         image_bytes_received=total_bytes,
         **_flatten_flags(report.combined, [m for strip in baskets for m in strip]),
