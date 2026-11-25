@@ -253,7 +253,7 @@ Screenshots: `artifacts/viewport-320-recapture.png`,
 
 **Honest limit:** the service worker has not been exercised through a real
 install → offline → reload cycle in this environment. That is a manual device
-check (see the Stage 2 checklist), not a test result.
+check (see the Stage 4 checklist §7.3), not a test result.
 
 ---
 
@@ -324,7 +324,7 @@ browser to render the real app and measure layout. Recorded results:
 The screenshots (`artifacts/viewport-320-batch.png`,
 `artifacts/viewport-320-recapture.png`, `artifacts/viewport-360-hindi.png`) are
 **git-ignored build artifacts**, so they are not in the archive. They can be
-regenerated with the procedure in `docs/NEURAVIZ_STAGE2_CHECKLIST.md` §5, and a
+regenerated with the procedure in `docs/NEURAVIZ_STAGE4_CHECKLIST.md` §8, and a
 human should still confirm the spacing on a physical phone.
 
 ---

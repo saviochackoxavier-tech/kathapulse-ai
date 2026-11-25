@@ -1,8 +1,9 @@
 # KathaPulse AI — Submission Overview
 
-**Build:** `v1.6.1` · **commit:** `5aeb05f` · **branch:** `freebuff/634aa3b468f03b91c44ddefa`
+**Build:** `v1.6.1` · **documented commit:** `4fe14cf` · **branch:** `freebuff/634aa3b468f03b91c44ddefa`
 **Document date:** 25 November 2026
-**Challenge:** NeuraViz AI Challenge 2026–27, Stage 2 (idea submission)
+**Challenge:** NeuraViz AI Challenge 2026–27, **Stage 4 — Final Stage**
+**Final-stage deadline:** **10 December 2026** (confirm on the participant portal)
 
 > **Understand Your Medicine. Protect Your Health.**
 
@@ -69,7 +70,8 @@ KathaPulse addresses all five in one flow, on a low-end Android phone, with
 
 ## 3. What the build actually contains (verified file tree)
 
-Only files that exist at `5aeb05f` are listed. Counts are from this build.
+Only files that exist at `4fe14cf` are listed. Counts are from this build; the
+application code is unchanged since `5aeb05f`.
 
 | Area | Files | Reality |
 |---|---|---|
@@ -165,7 +167,8 @@ manager, data-fiduciary registration or audit has been performed.
 
 - `docs/VALIDATION_REPORT.md` — the test-backed clinical, translation and
   offline-error audit.
-- `docs/NEURAVIZ_STAGE2_CHECKLIST.md` — Stage 2 alignment, judge evidence
-  checklist, demo script, archive command.
+- `docs/NEURAVIZ_STAGE4_CHECKLIST.md` — Stage 4 finalist alignment, live-vision
+  status, physical-phone protocol, four-screenshot capture runbook, voiceless
+  demo script, archive command.
 - `README.md` — architecture, API, test commands, pass-by-pass history.
 - `AUDIT_REPORT.md` — independent audit notes and per-pass scorecards.

@@ -4,16 +4,16 @@ Dialect-aware medication safety companion for Kerala. Photograph a medicine
 strip, get a plain-language warning in Malayalam or Hindi — spoken aloud — before
 you take two tablets that contain the same drug.
 
-> **NeuraViz AI Challenge 2026–27 — Stage 2 submission · working POC `v1.6.1`.**
-> Registration and idea submission close **31 January 2027** (organiser's extended
-> date; re-check the portal).
+> **NeuraViz AI Challenge 2026–27 — Stage 4 (Final Stage) · working POC `v1.6.1`.**
+> Final-stage package closes **10 December 2026**; re-check the date and upload
+> format on the participant portal before submitting.
 > Team: `<team name>` · Contact: `<name> · <email>`
 > *(Replace the two placeholders above before submitting; everything else in this
 > file is final.)*
 >
 > **Submission pack:** [overview & competitor matrix](docs/SUBMISSION_OVERVIEW.md) ·
 > [clinical/translation/offline audit](docs/VALIDATION_REPORT.md) ·
-> [Stage 2 checklist & evidence pack](docs/NEURAVIZ_STAGE2_CHECKLIST.md) ·
+> [Stage 4 finalist checklist & evidence pack](docs/NEURAVIZ_STAGE4_CHECKLIST.md) ·
 > clean source archive: `./scripts/make_submission_archive.sh`
 
 **Judges' 30-second demo — no camera, no API key, no configuration.**
@@ -586,7 +586,7 @@ and one script make the project auditable without reading the history:
 |---|---|
 | `docs/SUBMISSION_OVERVIEW.md` | Problem/solution framing, verified file tree, **honest six-product comparison matrix** (Pill IQ, PharmaScan AI, MedLingual, MedScan, MedicineWatch India, DoseBell), privacy posture, limitations |
 | `docs/VALIDATION_REPORT.md` | Test-backed clinical interaction and paracetamol-ceiling audit, 81-key tri-lingual coverage, offline/rejection error handling, corrected failover description, residual risks |
-| `docs/NEURAVIZ_STAGE2_CHECKLIST.md` | Stage 2 alignment to the 31 January 2027 deadline, paste-ready 100-word summary, judge evidence checklist, manual capture steps, archive instructions |
+| `docs/NEURAVIZ_STAGE4_CHECKLIST.md` | Stage 4 finalist alignment to the 10 December 2026 deadline, live-vision status, preview recovery, physical-phone protocol, four-screenshot capture runbook, voiceless demo script, archive instructions |
 | `scripts/make_submission_archive.sh` | `git archive` ZIP from HEAD; refuses forbidden paths and real credential shapes |
 
 Three brief premises were corrected rather than copied into the docs:
@@ -603,6 +603,21 @@ Three brief premises were corrected rather than copied into the docs:
 
 Counts in this build: **348 backend checks**, **119 frontend checks**, 48 molecules,
 256 indexed catalogue names, 4 curated recall notices, service worker `v10`.
+
+### Stage 4 finalist update (Pass 35)
+
+Documentation only again — no application code changed. The checklist was renamed
+to `docs/NEURAVIZ_STAGE4_CHECKLIST.md` and now targets the **10 December 2026**
+final-stage upload: the three-deliverable package (summary, report/presentation,
+optional demo link), the **verified** live-vision status (`vision_keys: 0`,
+`manual_required`, with the exact secret/restart steps), preview recovery after an
+idle checkpoint drops `.venv`, a physical-phone protocol for audible `ml-IN`/
+`hi-IN` speech, 320–360 px touch comfort and the `kathapulse-v10` offline cycle, a
+step-by-step runbook for the four required screenshots, and a 60–90 second
+voiceless demo script with a rule that stubbed responses are labelled
+**"simulated confidence response"**. The public challenge page still advertises
+an extended general date for the earlier stages; the portal's finalist date
+governs, and the checklist says so.
 
 ## Tests
 
