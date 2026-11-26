@@ -1,207 +1,496 @@
-# KathaPulse AI
+<div align="center">
 
-Dialect-aware medication safety companion for Kerala. Photograph a medicine
-strip, get a plain-language warning in Malayalam or Hindi — spoken aloud — before
+# 🩺 KathaPulse AI
+
+### *Understand Your Medicine. Protect Your Health.*
+
+**A dialect-aware medicine-safety companion for Indian households and small pharmacies.**
+Photograph a medicine strip — get a deterministic, explainable, tri-lingual warning *before*
 you take two tablets that contain the same drug.
 
-> **NeuraViz AI Challenge 2026–27 — Stage 4 (Final Stage) · working POC `v1.6.1`.**
-> Final-stage package closes **10 December 2026**; re-check the date and upload
-> format on the participant portal before submitting.
-> Team: `<team name>` · Contact: `<name> · <email>`
-> *(Replace the two placeholders above before submitting; everything else in this
-> file is final.)*
->
-> **Submission pack:** [overview & competitor matrix](docs/SUBMISSION_OVERVIEW.md) ·
-> [clinical/translation/offline audit](docs/VALIDATION_REPORT.md) ·
-> [Stage 4 finalist checklist & evidence pack](docs/NEURAVIZ_STAGE4_CHECKLIST.md) ·
-> clean source archive: `./scripts/make_submission_archive.sh`
+<sub>NeuraViz AI Challenge 2026–27 · **Stage 4 Finalist** · working POC **`v1.6.1`** · commit [`474a429`](https://github.com/saviochackoxavier-tech/kathapulse-ai/commit/474a429)</sub>
 
-**Judges' 30-second demo — no camera, no API key, no configuration.**
+<br/>
 
-1. Open the preview URL (or `http://localhost:3004`).
-2. Tap **Telma 40 + Telma-H** → red `critical` card: the same telmisartan twice,
-   plus a look-alike warning about the same foil family. Spoken in Malayalam.
-3. Tap **Dolo 650 + Crocin Cold & Flu** → red `critical` card: 1300 mg of
-   paracetamol at once, from two brands.
-4. Tap **Amaryl 1 mg** → amber `caution` card: sounds like Amlopres, a
-   different drug — verify before taking.
-5. Tap **Glycomet 500 · batch audit** → crimson banner *above* the verdict: the
-   batch is on the recall list **and** the foil is past its expiry, spoken in
-   Malayalam. This is the pharmacy audit path — it reads the box, not the dose.
-6. Tap **Glycomet GP · ground truth** → **metformin + glimepiride** with a green
-   "Ground-Truth verified" line: the local database caught the second molecule
-   that a plain brand match drops.
-7. Switch the language selector to **हिन्दी** to see the identical findings, and
-   the same spoken script, in Hindi.
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?logo=fastapi&logoColor=white)
+![Pydantic](https://img.shields.io/badge/Pydantic-v2-E92063?logo=pydantic&logoColor=white)
+![PWA](https://img.shields.io/badge/PWA-offline--first-5A0FC8?logo=pwa&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-348%20backend%20%2B%20119%20frontend-2ea44f)
+![Languages](https://img.shields.io/badge/languages-ml%20%7C%20hi%20%7C%20en-1f6feb)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-All five presets run through the deterministic engines only (clinical rules, the
-offline batch audit and the local knowledge base), so they work with no vision
-key and no network egress. Real photos additionally need the
-optional vision or OCR tier — see [Configuration](#configuration).
+**English** · **മലയാളം** · **हिन्दी**
 
-**Privacy in one line:** the browser strips EXIF before upload, the server
-processes the image in RAM and never writes it to disk, and there are no
-accounts or cookies — see [Privacy design (DPDP Act 2023)](#privacy-design-dpdp-act-2023).
+</div>
+
+---
+
+## Table of contents
+
+1. [Why KathaPulse exists](#1-why-kathapulse-exists)
+2. [What it does](#2-what-it-does)
+3. [System architecture & workflow](#3-system-architecture--workflow)
+4. [Market differentiation](#4-market-differentiation)
+5. [Explainability: evidence, not a score](#5-explainability-evidence-not-a-score)
+6. [Security & safety safeguards](#6-security--safety-safeguards)
+7. [Indian legal & regulatory governance](#7-indian-legal--regulatory-governance)
+8. [Visual evidence gallery](#8-visual-evidence-gallery)
+9. [Quick start](#9-quick-start)
+10. [Configuration](#10-configuration)
+11. [API reference](#11-api-reference)
+12. [Testing](#12-testing)
+13. [Repository layout](#13-repository-layout)
+14. [Documentation & governance](#14-documentation--governance)
+15. [Known limitations](#15-known-limitations)
+16. [Contributing](#16-contributing)
+17. [License](#17-license)
+
+---
+
+## 1. Why KathaPulse exists
+
+India's medicine shelves are full of the same molecule wearing different names. A patient with
+fever takes **Dolo 650** and **Crocin Cold & Flu** — both paracetamol — and reaches 1,300 mg in a
+single sitting. A BP patient refills **Telma 40** and is handed **Telma-H**, which adds
+hydrochlorothiazide to the telmisartan they are already taking. A diabetes patient picks
+**Glycomet** and **Glycomet-GP**, one letter apart, different contents.
+
+None of these people are careless. They are reading a foil printed in a script they can read but
+whose *pharmacology* they were never taught, in a language most scanning apps do not speak.
+
+| The failure mode | What KathaPulse does about it |
+|---|---|
+| **Overlapping salts** across two brands | Resolves every strip to molecules, then flags the duplicate *before* the verdict |
+| **Look-alike shelf neighbours** (Telma / Telma-H, Amaryl / Amlopres) | Separate LASA pass with verification wording, not a composition claim |
+| **Paracetamol ceiling** (4,000 mg/day adult) | Cumulative dose check across the whole scan, repeated in the reminder engine |
+| **Recalled or expired batches** | Offline batch/expiry audit with a pharmacovigilance caveat |
+| **Language** | Every warning, action and spoken script exists in Malayalam, Hindi and English |
+| **Privacy** | Photo processed in RAM, never written to disk, no accounts, no cookies |
+| **Bad photos** | Refuses or asks for a retake instead of guessing a medicine |
+
+**The core design rule:** a wrong guess is more dangerous than "I don't know". The language model
+only *reads the foil*. Every warning is produced by explicit, unit-tested rules over a fixed
+catalogue.
+
+---
+
+## 2. What it does
 
 ```
-browser                          server (FastAPI)                 data
-───────                          ────────────────                 ────
-camera / gallery
-   │
-   ├─ canvas re-encode ──────────► POST /verify-strip  (multipart)
-   │  (EXIF, GPS, timestamp,           │
-   │   device id all dropped)          ├─ extract: vision LLM → OCR → manual
-   │                                  ├─ resolve: Indian drug taxonomy (48 molecules)
-   ▼                                  ├─ rules: duplicate salt, dose ceiling,
-scrubbed JPEG only ──────────────────►│         interactions, same-class overlap
-   │                                  ▼
-   ├─ result cards (high contrast)  JSON: tri-lingual findings + speech script
-   └─ Web Speech API (ml-IN / hi-IN)
+photograph strip → read printed text → resolve molecules → run clinical rules
+      → audit batch & expiry → explain the evidence → speak it in ml/hi/en
+      → schedule the next dose locally
 ```
 
-## Run
+| Capability | Status in this build |
+|---|---|
+| Photo identification (vision LLM → OCR → manual fallback) | Implemented, **live vision key not configured** (`vision_keys: 0`) |
+| Duplicate-salt, paracetamol ceiling, 29 interaction pairs, same-class overlap, LASA | Deterministic, 100% on a 44-case labelled corpus |
+| Explainable evidence card (name / strength / active ingredient provenance) | Per-field status + verifying database + review date |
+| Confidence gate (`high` / `medium` / `low`) | Low refuses before matching; medium holds a retake verdict |
+| Batch recall + expiry + cold-chain audit | 4 curated **pilot** notices, 15 printed expiry shapes parsed |
+| Tri-lingual UI, findings and speech | ml / hi / en, asserted by tests |
+| Local audio pack tier (recorded clips) | Loader + manifest ship **empty**; device voice is the fallback |
+| Dose reminders with countdown | Server derives, browser holds in memory, `1-0-1`/BD/TDS/every 8 h |
+| Offline-first PWA shell | Service worker `kathapulse-v10`; scans are never cached |
+| Read-only catalogue feeds | `GET /knowledge.json`, `GET /taxonomy.json` |
+
+**Five one-tap demo presets** run the pilot cases with no camera, no key and no network egress:
+Telma 40 + Telma-H, Dolo 650 + Crocin Cold & Flu, Amaryl 1 mg, Glycomet 500 batch audit
+(recalled + expired), Glycomet GP ground truth.
+
+---
+
+## 3. System architecture & workflow
+
+### 3.1 End-to-end pipeline
+
+```
+┌─────────────────────── CLIENT · mobile browser / installed PWA ────────────────────────┐
+│                                                                                        │
+│   camera capture  ──or──  gallery pick                                                 │
+│          │                                                                             │
+│          ▼                                                                             │
+│   ┌──────────────────────┐   The canvas holds pixels only. It has nowhere to put EXIF,  │
+│   │  canvas re-encode    │   GPS, XMP, IPTC, timestamps or a device serial.            │
+│   │  static/js/capture.js│   Orientation is baked into the pixels first.              │
+│   └──────────┬───────────┘   ≤1600 px long edge · JPEG · ≤6 MiB                        │
+│              │                                                                         │
+│              │  scrubbed JPEG bytes (multipart/form-data)                              │
+└──────────────┼─────────────────────────────────────────────────────────────────────────┘
+               │  HTTPS · Cache-Control: no-store on every response
+               ▼
+┌──────────────────── SERVER · FastAPI 0.115 · stateless · no writable path ─────────────┐
+│                                                                                        │
+│  POST /verify-strip        multipart image + language + paracetamol_taken_today_mg      │
+│  POST /verify-medicines    JSON names (+ optional batch_no, expiry, age_years)          │
+│  POST /verify-strips/batch multipart 1–5 strips, concurrency cap 3                      │
+│              │                                                                         │
+│              ▼                                                                         │
+│   ┌──────────────────────────────────────────────────────────────────────────────┐     │
+│   │ 1 · VALIDATE      magic bytes · content type · 6 MiB · Pydantic extra="forbid"│     │
+│   └───────────────┬──────────────────────────────────────────────────────────────┘     │
+│                   ▼                                                                    │
+│   ┌──────────────────────────────────────────────────────────────────────────────┐     │
+│   │ 2 · READ          bytes in RAM, io.BytesIO for OCR — no tempfile, no cache    │     │
+│   └───────────────┬──────────────────────────────────────────────────────────────┘     │
+│                   ▼                                                                    │
+│   ┌──────────────────────────────────────────────────────────────────────────────┐     │
+│   │ 3 · EXTRACT       tier 1  vision LLM  (OpenAI-compatible, Groq demo model)    │     │
+│   │                   tier 2  local Tesseract OCR                                 │     │
+│   │                   tier 3  manual entry (user types the printed name)          │     │
+│   │                                                                               │     │
+│   │   dual-key failover: primary 401/403/429 ──► fallback key, same request,      │     │
+│   │   the rejected key is not retried. /health exposes counts, never values.      │     │
+│   └───────────────┬──────────────────────────────────────────────────────────────┘     │
+│                   ▼                                                                    │
+│   ┌──────────────────────────────────────────────────────────────────────────────┐     │
+│   │ 4 · RESOLVE       48-molecule taxonomy (15 fixed combinations)                │     │
+│   │                   ──► 256-name Kerala catalogue, provenance 2026-11-25        │     │
+│   │                   space/dash-insensitive, 0.88 similarity floor, superset wins│     │
+│   └───────────────┬──────────────────────────────────────────────────────────────┘     │
+│                   ▼                                                                    │
+│   ┌──────────────────────────────────────────────────────────────────────────────┐     │
+│   │ 5 · DECIDE — pure functions, no model in the decision path                    │     │
+│   │   clinical.py  DUPLICATE_SALT · PARACETAMOL_DAILY_MAX (4000 mg) ·             │     │
+│   │                INTERACTION (29 pairs) · DUPLICATE_CLASS · LASA_RISK ·         │     │
+│   │                AGE_WARNING · UNRECOGNISED_MEDICINE                           │     │
+│   │   recall.py    RECALLED_BATCH · EXPIRED_STOCK · EXPIRY_SOON ·                 │     │
+│   │                EXPIRY_UNREADABLE · COLD_CHAIN_RISK                            │     │
+│   │   audio_reminders.py  schedule parser + paracetamol ceiling refusal           │     │
+│   └───────────────┬──────────────────────────────────────────────────────────────┘     │
+│                   ▼                                                                    │
+│   ┌──────────────────────────────────────────────────────────────────────────────┐     │
+│   │ 6 · RESPOND       verdict · localised findings · evidence rows · speech       │     │
+│   │                   processed_in_memory: true · Cache-Control: no-store         │     │
+│   └──────────────────────────────────────────────────────────────────────────────┘     │
+└───────────────────────────────────┬────────────────────────────────────────────────────┘
+                                    ▼
+┌──────────────────────── CLIENT · render and speak ─────────────────────────────────────┐
+│  banner (recall / expiry)  →  verdict  →  provenance + script  →  countdown            │
+│  →  findings  →  detected medicines  →  reminder form  →  disclaimer                   │
+│                                                                                        │
+│  audio tier 0  local clip pack  ─►  tier 1  SpeechSynthesis (ml-IN / hi-IN)             │
+│                                 └►  tier 2  written warning in large type               │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.2 Decision order (why the verdict is deterministic)
+
+```mermaid
+flowchart TD
+    A[Strip or typed names] --> B{Extraction tier}
+    B -->|Vision LLM| C[Printed text + confidence]
+    B -->|Tesseract OCR| C
+    B -->|Manual entry| C
+    C --> D{Confidence low?}
+    D -->|yes| E[Reject before matching<br/>ask for a new photo]
+    D -->|no| F[Resolve molecules]
+    F --> G{In 256-name catalogue?}
+    G -->|no| H[UNRECOGNISED_MEDICINE<br/>never silently safe]
+    G -->|yes| I[Clinical rules]
+    I --> J[Batch and expiry audit]
+    J --> K[Evidence rows + verdict + speech]
+    K --> L[Render banner, cards, script]
+```
+
+### 3.3 Offline / PWA behaviour
+
+```
+service worker kathapulse-v10
+├── navigation (/)         network-first  → cached shell fallback
+├── /static/*, feeds        cache-first    → stale-while-revalidate
+├── every non-GET (scan)    untouched      → never cached, queued or replayed
+└── cross-origin            untouched
+```
+
+The cache lives on the patient's own phone. Server-side zero persistence is unchanged: no cache
+directory, no volume, no database.
+
+---
+
+## 4. Market differentiation
+
+This table compares **publicly stated** capabilities as read on 25 November 2026. It is not a
+benchmark, no competitor was tested, and "not stated publicly" means exactly that — not that a
+feature is absent.
+
+| | **KathaPulse AI** | **Pill IQ** | **PharmaScan AI** | **MedLingual** | **MedScan** | **MedicineWatch India** | **DoseBell** |
+|---|---|---|---|---|---|---|---|
+| **What it is** | Strip-safety workflow for Indian households/pharmacies | AI packaging scanner, 1,200+ medicines | AI medicine & pill identifier | OTC label scanner with translation | Reads a label's purpose aloud, senior-friendly | Checks a batch against CDSCO quality alerts | **No public product verified under this name** |
+| **Duplicate-salt / interaction rules** | **Yes — deterministic**, 29 curated pairs | Interaction reports as a Premium feature; method not public | Interactions listed | Not stated | Not stated | No — batch alerts only | Not verifiable |
+| **Recall / batch / expiry audit** | **Yes** — 4 pilot notices, expiry parse, cold-chain flag | Not stated | Not stated | Not stated | Not stated | **Yes — core feature**, CDSCO-sourced | Not verifiable |
+| **Malayalam + Hindi + English** | **Yes, all 81 strings** | English interface | Not stated | 6 languages, **no Malayalam** | Many, including Malayalam | Not stated | Not verifiable |
+| **Scan explainability** | **Per-field evidence + database + review date** | Plain-language summary; sourcing not public | Plain-language info | Translation of OpenFDA content | Reads the label purpose | Links to the official alert | Not verifiable |
+| **Privacy posture** | RAM only, no disk, no cache, no accounts | Photos "used only to identify"; history saved in-app | Not stated | Not stated | Not stated | Server-side web app | Not verifiable |
+| **Dose reminders** | **Yes** — local, spoken, page must stay open | Not stated | Not stated | Listed as a feature | Not stated | No | Not verifiable |
+| **Offline** | Installable PWA with cached shell + catalogue | Not stated | Not stated | Not stated | Not stated | Not stated | Not verifiable |
+| **Price** | Free prototype, no paid tier | Free 3 scans/day, ₹100/month | Free + IAP | Not stated | Free | Free | Not verifiable |
+
+### The honest differentiator
+
+Not "AI scans medicine" — that already exists. The defensible claim is the **combination**:
+
+> a refusal-first safety engine (rules, not model output) **+** evidence that can be audited field
+> by field **+** a real batch/expiry audit **+** Malayalam/Hindi parity **+** zero server-side image
+> persistence, in one workflow built for a 320 px phone.
+
+**What this table does not claim:** that KathaPulse is more accurate than any competitor; that an
+unlisted feature is missing; or that it is the first multilingual medicine scanner. *DoseBell* could
+not be verified and no capability is asserted for it.
+
+The full matrix, with sources and caveats, is in [`docs/SUBMISSION_OVERVIEW.md`](docs/SUBMISSION_OVERVIEW.md#4-honest-positioning-against-six-products).
+
+---
+
+## 5. Explainability: evidence, not a score
+
+Every scan returns one `evidence` row per strip. A field is only "verified" when a database actually
+confirmed it.
+
+| Field | `matched` / `verified` means |
+|---|---|
+| **Medicine name** | the label resolved **and** the reading tier did not report itself unsure |
+| **Strength** | the number came from the foil (including a strength printed in the brand, `Dolo 650`) or the brand's fixed-combination record — never from a molecule default |
+| **Active ingredient** | a database confirmed the molecule; the row names it (`taxonomy` or `ground_truth`) and the catalogue review date (`2026-11-25`) |
+
+A molecule-level default strength renders as **Unverified**, because the camera never read it.
+
+### Confidence gate
+
+| Reported confidence | Behaviour |
+|---|---|
+| `low` | refused **before** matching (`rejection: low_confidence`) and the user is asked for a new photo |
+| `medium` | molecules resolve, but `recapture_required` holds the verdict at *Could not verify* and the retake prompt is spoken |
+| absent / unrecognised | nothing changes — a silent model is neither promoted nor rejected |
+
+OCR has no self-report, so confidence is derived: an exact catalogue hit is `high`, anything that
+needed the fuzzy step is `medium`. Manual entry carries none.
+
+---
+
+## 6. Security & safety safeguards
+
+| Control | Implementation | Verified by |
+|---|---|---|
+| **EXIF / GPS / device metadata removed** | every capture and gallery pick is re-encoded through `<canvas>`; orientation baked in first | `tests/js/exif-scrub.test.mjs` — 15 checks with a real JPEG codec |
+| **Volatile memory only** | upload read into `bytes`; OCR decodes from `io.BytesIO`; nothing written to disk | AST test forbids `tempfile` / `open()` / `shutil` in the request path |
+| **No retention** | `Cache-Control: no-store` on every response; service worker never caches a POST | `tests/test_nextgen.py`, `tests/test_hardening.py` |
+| **Strict contracts** | Pydantic v2 models with `extra="forbid"`; free text charset-whitelisted and capped at 120 chars | `tests/test_hardening.py`, `tests/test_api.py` |
+| **Prompt-injection resistance** | model output is parsed into fixed models; unrecognised text is only fuzzy-matched against a closed catalogue; nothing the model says can trigger an action | `tests/test_vision.py` |
+| **Secret isolation** | keys read from environment per request; `.env` git-ignored; `/health` reports *whether* a tier exists, never a value | `tests/test_hardening.py`, archive credential scan |
+| **Upload limits** | magic-byte check, 6 MiB cap, ≤5 strips, ≤10 medicines, 1600 px long edge | `tests/test_api.py`, `tests/test_nextgen.py` |
+| **Schema occlusion** | `/docs`, `/redoc`, `/openapi.json` return `no-store` 404 unless `KATHA_DOCS_ENABLED=1` | `tests/test_hardening.py` |
+| **Rate limiting** | edge rules in `deploy/`; optional in-app sliding window (`KATHA_RATE_LIMIT_PER_MIN`, off by default) | `tests/test_ratelimit.py` |
+| **Relay is closed by default** | `/ws/relay` refuses every connection without `KATHA_RELAY_SECRET`, HMAC tickets, 8-peer rooms, 2 KB frames, no transcript | `tests/test_nextgen.py` |
+| **Container posture** | non-root uid 10001, no writable layer, 6 pinned dependencies, healthcheck, no baked secrets | `tests/test_hardening.py` |
+| **No accounts at all** | no cookies, no sessions, no identifier in any log or response | design + tests |
+
+**Safety, not just security:** the app never tells a patient to start, stop or change a dose; an
+unreadable strip produces `verdict: unknown` and a manual-entry prompt; a batch with no warning is
+explicitly *not* declared safe.
+
+---
+
+## 7. Indian legal & regulatory governance
+
+> **Position statement.** KathaPulse AI is a **screening and education aid**, not a medical device,
+> not a diagnostic tool, not a pharmacy system of record, and it holds **no certification** from
+> CDSCO or any other regulator. Alignment below describes design choices and honest gaps; it is not
+> a compliance certificate.
+
+### 7.1 Digital Personal Data Protection Act, 2023
+
+| DPDP principle | How this build addresses it | Status |
+|---|---|---|
+| **Lawful purpose & purpose limitation** | processing starts only on an explicit capture or typed name, and is used only to produce that one verdict | implemented by construction |
+| **Data minimisation** | image downscaled to 1600 px, ≤6 MiB, ≤10 medicines per scan; no name, phone, age or location collected | implemented |
+| **Storage limitation** | RAM only, released with the request; `no-store`; no `localStorage` for clinical data | implemented, AST-tested |
+| **No third-party transfer by default** | with no vision key configured, no image leaves the server (`vision_keys: 0`) | implemented |
+| **Consent notice & record** | no consent manager, no notice artefact, no grievance officer | **not implemented** |
+| **DPIA / data-fiduciary registration** | not performed | **not implemented** |
+| **Transfer notice if a vision key is enabled** | the image would go to that provider; a notice must precede production use | **required before enabling** |
+
+### 7.2 Drugs and Cosmetics Act, 1940 / Rules, 1945 — CDSCO scope
+
+| Boundary | Position |
+|---|---|
+| Drug / device status | not a drug, not a medical device, no diagnostic or therapeutic claim |
+| CDSCO certification | **none claimed**; the recall list is a 4-entry curated pilot, never described as a government feed |
+| Prescription scheduling | **Schedule H / H1 status is not checked** — required before any pharmacy deployment |
+| Pharmacovigilance | the batch caveat states that a batch with no warning is not guaranteed safe, genuine or free of defects; there is no ADR reporting channel |
+| Dosing advice | never starts, stops or changes a dose; every warning ends by directing the user to a pharmacist or doctor |
+
+### 7.3 Information Technology Act, 2000 / SPDI baseline
+
+| Control | Position |
+|---|---|
+| Sensitive personal data on a server | none stored — no database, no volume, no cache |
+| Transport | HTTPS at the proxy; TLS 1.2/1.3 and HSTS configured in `deploy/nginx.kathapulse.conf` |
+| Interception / analytics | none — no third-party scripts, no telemetry |
+| Security headers & input allowlists | present in the app and edge config |
+| ISO 27001 / CERT-In audit / incident-response runbook | **not in place** |
+
+The full, code-referenced audit — including every gap — is in
+[`docs/VALIDATION_REPORT.md` §9–§11](docs/VALIDATION_REPORT.md).
+
+---
+
+## 8. Visual evidence gallery
+
+Captures come from the live build on a 320 px and 360 px viewport
+(`scrollWidth === clientWidth` at both widths, so no horizontal overflow). The PNGs are
+**git-ignored by design** and ship inside the Stage 4 upload pack
+(`artifacts/stage4_submission/evidence/`), because a screenshot folder in git is never the source
+of truth and would go stale. Each placeholder below names the exact file.
+
+### 8.1 Explainable identification — the evidence card
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  EVIDENCE 01 · docs/evidence/01-evidence-card-320.png        │
+│  viewport 320 px · full-page capture 320 × 3,169             │
+│  source: live demo preset (no vision key required)           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Walkthrough.** After a scan resolves, the card shows one row per strip: **medicine name**
+(`Dolo 650`), **strength** (`650 mg`, read from the foil because the number is part of the brand),
+and **active ingredient** (`paracetamol`), each with its own status chip. The provenance line names
+the database that confirmed the molecule (`ground_truth` or `taxonomy`) and the catalogue review
+date **2026-11-25**. A strength that came from a molecule default shows **Unverified** in amber —
+the app distinguishes *what the camera read* from *what the database knows*.
+
+**Why it matters.** A judge, pharmacist or regulator can audit the identification field by field
+instead of trusting an opaque confidence percentage.
+
+### 8.2 Confidence-based rejection and blurry-image retake guardrail
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  EVIDENCE 02 · docs/evidence/02-recapture-simulated.png      │
+│                 docs/evidence/02-low-rejected-simulated.png  │
+│  source: response-level simulation — banner reads             │
+│          "SIMULATED CONFIDENCE RESPONSE"                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Walkthrough.** Two states of the same guardrail. A **medium**-confidence read still resolves the
+molecules but holds the verdict at *Could not verify*, withholds the green provenance badge and
+asks for a sharper photo — the retake prompt is what the LISTEN button speaks. A **low**-confidence
+read is refused *before* matching, and the screen offers the manual-entry panel so the user can type
+the printed name instead.
+
+**Labelling.** `KATHA_VISION_API_KEY` is not configured in this environment (`vision_keys: 0`), so
+the confidence value was injected into a real API response while the rendering path is the shipped
+client code. Both captures therefore carry a visible **"simulated confidence response"** label.
+No capture is presented as a live model read.
+
+### 8.3 Tri-lingual recall warning and pharmacovigilance disclaimer
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│  EVIDENCE 03 · docs/evidence/03-recall-banner-320.png        │
+│                 docs/evidence/03-recall-banner-ml.png        │
+│                 docs/evidence/03-recall-banner-hi.png        │
+│  source: live batch preset (GM2407A, 09/2026)                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Walkthrough.** A recalled **and** expired foil renders a crimson `role="alert"` banner **above**
+the verdict — never buried in the findings list — carrying the localised title, message and action,
+followed by the tri-lingual pharmacovigilance caveat: *"A batch with no warning is not guaranteed to
+be safe, genuine, or free from quality defects. This check covers the pilot recall list and the
+printed dates only."* Captured in English, Malayalam and Hindi; the API returns all three languages
+and the UI renders the selected one, which is why the pack carries three images.
+
+**Disclosed UI finding.** The batch caveat follows the language selector only; the static control
+labels (`LISTEN` / `STOP` / `SET` / `CANCEL`) remain bilingual Malayalam + English in Hindi mode.
+Both live in `static/index.html`, which the feature freeze forbids editing, so they are disclosed
+rather than cropped.
+
+> The pack also contains speech-control and reminder captures
+> (`04-voice-reminder-ml.png`, `04-voice-reminder-hi.png`) showing the no-Malayalam-voice fallback
+> notice and an active `1-0-1` countdown. Audible playback on a physical handset remains a manual
+> check — see [Known limitations](#15-known-limitations).
+
+---
+
+## 9. Quick start
 
 ```bash
+git clone https://github.com/saviochackoxavier-tech/kathapulse-ai.git
+cd kathapulse-ai
+
 python3 -m venv .venv
-./.venv/bin/pip install -r requirements.txt
-./scripts/serve.sh                     # supervised, port 3004, restarts on exit
-```
+./.venv/bin/pip install -r requirements.txt       # Windows: .\.venv\Scripts\pip.exe
 
-`scripts/serve.sh` runs uvicorn in a restart loop bound to `0.0.0.0:$PORT`
-(default 3004, the preview port). A cloud runner restart or a crash therefore
-recovers within a second instead of leaving the preview iframe on "refused to
-connect". For a one-shot run:
-
-```bash
+./scripts/serve.sh                                # supervised, 0.0.0.0:3004, restarts on exit
+# or one-shot:
 ./.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 3004 --proxy-headers
 ```
 
-Open the preview URL, or `http://<host>:3004` on the phone. The camera needs a
-secure context (HTTPS or localhost); the "Choose photo" path works everywhere.
+Open `http://localhost:3004`. The camera needs a secure context (HTTPS or localhost); the
+**Choose photo** path and the five demo presets work everywhere.
 
-### Configuration
+**No API key, no camera, no configuration needed for a demo.** Tap a preset and the deterministic
+engines answer:
 
-Copy `.env.example` to `.env`. Variables are read **per request**, so a key
-takes effect without a restart. Real environment variables always win over the
-file, and `/health` reports only *whether* a tier is configured — never a key.
-
-### Vision tier (GroqCloud)
-
-Any OpenAI-compatible chat-completions endpoint works. The configured demo
-provider is Groq:
-
-```
-KATHA_VISION_BASE_URL=https://api.groq.com/openai/v1
-KATHA_VISION_MODEL=meta-llama/llama-4-scout-17b-16e-instruct
-KATHA_VISION_API_KEY=<set this in Secrets, never in git>
-KATHA_VISION_JSON_MODE=0
-```
-
-**Secret handling.** The key belongs in Settings → Project settings → Secrets,
-or typed by you into `.env` (already in `.gitignore` — check with
-`git check-ignore -v .env`). It is never hardcoded, never logged, never
-returned by `/health`, and a test asserts it cannot reach either.
-
-`KATHA_VISION_JSON_MODE=0` is the default because Groq does not enable
-`response_format: json_object` on every model; parsing is fence-tolerant, so
-```json blocks and stray prose around the object are accepted.
-
-**Two keys (failover).** Set `KATHA_VISION_API_KEY_FALLBACK` as well and a
-primary that answers `429` (rate-limited), `401` or `403` (revoked, exhausted,
-wrong scope) is abandoned immediately: the same request is retried with the
-second key, and the first rejected key is not retried on the way. With one key
-nothing changes — the quiet single `429` retry stays. `/health` reports
-`vision_keys` and `vision_fallback` as a count and a boolean, never a value. The
-whole behaviour is pinned by `tests/test_failover.py` (16 tests, no network).
-
-Verify the tier end to end — this is the check that distinguishes "wired" from
-"working":
-
-```bash
-cd tests/js && node make-sample-strip.mjs && cd ../..   # writes samples/strip-dolo.jpg
-./.venv/bin/python scripts/check_vision.py            # exit 0 = extraction worked
-```
-
-If no provider key exists yet, the same check can be run against a local
-Groq-shaped stand-in, which proves every part of the path except the vendor's
-own auth:
-
-```bash
-./.venv/bin/python scripts/_stub_vision.py 3010 &        # answers /chat/completions
-KATHA_VISION_API_KEY=stub KATHA_VISION_BASE_URL=http://127.0.0.1:3010 \
-KATHA_VISION_MODEL=stub/vision ./scripts/serve.sh
-```
-
-`scripts/_stub_vision.py` is verification tooling, never started by
-`serve.sh` and not part of the service.
-
-### Optional extraction tiers
-
-The clinical engine is fully functional without any external service — the
-camera path needs one of these to read real photos:
-
-| Tier | Requirement | Behaviour without it |
-|---|---|---|
-| Vision LLM | `KATHA_VISION_API_KEY`, `KATHA_VISION_BASE_URL`, `KATHA_VISION_MODEL` (any OpenAI-compatible vision endpoint) | falls through |
-| Local OCR | `pip install pytesseract pillow` + `tesseract-ocr` binary | falls through |
-| Neither | — | returns `manual_required`; the UI opens the manual-entry panel |
-
-The engine **never guesses** a medicine. An unreadable strip produces
-`verdict: "unknown"` plus a prompt to type the printed name — a wrong guess is
-more dangerous than "I don't know".
-
-## Deploy
-
-Two runner declarations ship with the app; both start the same ASGI object:
-
-| Artifact | Use |
+| Preset | Expected result |
 |---|---|
-| `Dockerfile` + `.dockerignore` | any container host (Cloud Run, Fly, Railway, ECS). Non-root user, no volume, `HEALTHCHECK` on `/health`. |
-| `Procfile` | Heroku/Render style: `web: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers` |
+| Telma 40 + Telma-H | `critical` — duplicate telmisartan **and** a LASA warning |
+| Dolo 650 + Crocin Cold & Flu | `critical` — 1,300 mg paracetamol at once |
+| Amaryl 1 mg | `caution` — sounds like Amlopres, a different drug |
+| Glycomet 500 · batch audit | `critical` — recalled batch **and** expired foil |
+| Glycomet GP · ground truth | `safe` — metformin + glimepiride verified locally |
 
-```bash
-docker build -t kathapulse .
-docker run -p 8000:8000 -e KATHA_VISION_API_KEY=... kathapulse
-curl -s localhost:8000/health      # tiers + taxonomy size, never a key
-```
+---
 
-Configuration on a host is **environment only**. `.env` is a local convenience:
-both `.gitignore` and `.dockerignore` exclude it, so a key can never travel in
-the image or the repository.
+## 10. Configuration
+
+Copy `.env.example` to `.env`. Variables are read **per request**, so a key takes effect without a
+restart; real environment variables always win over the file.
 
 | Variable | Required | Default / purpose |
 |---|---|---|
-| `PORT` | platform-dependent | 8000 in the image, 3004 locally |
 | `KATHA_VISION_API_KEY` | optional | unset → vision tier skipped, OCR/manual fallback |
-| `KATHA_VISION_BASE_URL` | optional | `https://api.openai.com/v1` (Groq: `https://api.groq.com/openai/v1`) |
-| `KATHA_VISION_MODEL` | optional | `gpt-4o-mini` (Groq: `meta-llama/llama-4-scout-17b-16e-instruct`) |
+| `KATHA_VISION_API_KEY_FALLBACK` | optional | used automatically when the primary answers 401/403/429 |
+| `KATHA_VISION_BASE_URL` | optional | `https://api.openai.com/v1` (Groq demo: `https://api.groq.com/openai/v1`) |
+| `KATHA_VISION_MODEL` | optional | `gpt-4o-mini` (Groq demo: `meta-llama/llama-4-scout-17b-16e-instruct`) |
 | `KATHA_VISION_TIMEOUT_S` | optional | `12` |
 | `KATHA_VISION_JSON_MODE` | optional | `0` — Groq does not support `json_object` on every model |
-| `KATHA_OCR_DISABLED` | optional | `1` disables local tesseract |
+| `KATHA_OCR_DISABLED` | optional | `1` disables local Tesseract |
+| `KATHA_RATE_LIMIT_PER_MIN` | optional | `0` (edge owns the budget); `30` for a bare container |
+| `KATHA_DOCS_ENABLED` | optional | `0` — keeps `/docs` and `/openapi.json` closed |
+| `KATHA_RELAY_SECRET` | optional | 16+ chars; without it `/ws/relay` refuses every connection |
+| `PORT` | platform-dependent | 3004 locally, 8000 in the container |
 
-Verified on this build: with the exact `uvicorn` command from the `Procfile` and
-`PORT=3011`, `GET /` → 200, `/static/css/styles.css`, all four JS assets and
-`/static/favicon.svg` → 200, `/favicon.ico` → 200 (browsers probe it even with a
-declared icon), `/health` → 200 with `Cache-Control: no-store`, and a real
-`POST /verify-medicines` left `/tmp` free of any upload artifact. The **image
-itself was not built here** — this sandbox has no access to a Docker daemon —
-so the Dockerfile is reviewed and its startup command exercised directly, not
-built.
+> **Failover, precisely.** The code supports a **second key for the same OpenAI-compatible
+> endpoint**, with rotation on 401/403/429. There is **no Gemini adapter** in this build and none is
+> claimed; pointing `KATHA_VISION_BASE_URL` at any compatible provider is a configuration change,
+> not a code path.
 
-There is no database, volume or writable path to provision: the service is
-stateless, so scaling out is just more replicas behind the same origin.
+**Secret handling.** Keys belong in the host's secret store or in `.env`, which is git-ignored
+(`git check-ignore -v .env`). No key is hardcoded, logged, returned by `/health`, or included in the
+submission archive.
 
-## API
+---
+
+## 11. API reference
 
 | Endpoint | Purpose |
 |---|---|
 | `POST /verify-strip` | multipart `image` + `language` (`ml`/`hi`/`en`) + `paracetamol_taken_today_mg` |
 | `POST /verify-medicines` | JSON `{medicines:[{name, batch_no?, expiry?}], language, paracetamol_taken_today_mg, age_years?}` |
-| `GET /knowledge.json` | the ground-truth catalogue: brands, molecules, cautions, age bands (data only) |
-| `GET /health` | which extraction tiers are live, taxonomy size, recall-notice and knowledge-base counts |
+| `POST /verify-strips/batch` | multipart 1–5 `strips` + `language`; per-strip analysis **and** a combined basket verdict |
+| `POST /reminders` | schedule (`1-0-1`, `BD`, `TDS`, `every 8 hours`) → derived plan, or a localised refusal reason |
+| `GET /knowledge.json` | verified catalogue: brands, molecules, cautions, age bands — data only |
+| `GET /taxonomy.json` | public molecule/brand feed that makes offline lookup possible |
+| `GET /health` | which extraction tiers are live, taxonomy size, recall and catalogue counts |
+| `GET /sw.js` | service worker at root scope (`Service-Worker-Allowed: /`) |
+| `WS /ws/relay/{room_id}` | guarded pharmacist relay stub — refuses unless configured |
 | `GET /` | the app shell |
-
-Response shape (abridged):
 
 ```json
 {
@@ -213,925 +502,142 @@ Response shape (abridged):
       "severity": "critical",
       "title":   {"en": "Same medicine twice", "ml": "ഒരേ മരുന്ന് രണ്ടുതവണ", "hi": "एक ही दवा दो बार"},
       "message": {"en": "...", "ml": "...", "hi": "..."},
-      "action":  {"en": "...", "ml": "...", "hi": "..."},
-      "anchors": ["paracetamol"]
+      "action":  {"en": "...", "ml": "...", "hi": "..."}
     }],
     "speech": {"language": "ml", "text": "കഥാപൾസ് മുന്നറിയിപ്പ്. …", "rate": 0.85}
   },
   "processed_in_memory": true,
-  "duplicate_salt_warning": true,
-  "lasa_risk": false,
-  "safety_message_ml": "കഥാപൾസ് മുന്നറിയിപ്പ്. …",
-  "safety_message_hi": "कथापल्स चेतावनी। …"
+  "duplicate_salt_warning": true
 }
 ```
 
-The last four fields are the flat client contract: `safety_message_ml` /
-`safety_message_hi` are the exact strings to hand to `SpeechSynthesis`, and the
-booleans are derived from the findings (one source of truth — a flag can never
-disagree with the text).
+---
 
-## Privacy design (DPDP Act 2023)
-
-* **Client side** — every capture and every gallery pick is drawn to a `<canvas>`
-  and re-encoded with `toBlob()`. A canvas holds pixels only; it has nowhere to
-  store EXIF/XMP/IPTC. Orientation is baked into the pixels first, so the strip
-  is not rotated after scrubbing.
-* **Server side** — the upload is read into a `bytes` object and never touches
-  the filesystem. There is no `tempfile`, no cache directory, no image logging.
-  A test walks the AST of `app/main.py` and `app/extraction.py` to keep it that
-  way.
-* **No accounts, no cookies, no sessions.** Nothing identifies the person
-  scanning; the response carries `processed_in_memory: true` and
-  `Cache-Control: no-store`.
-* **Prompt-injection resistance is structural** — model output is parsed into
-  models with `extra="forbid"`, free text is charset-whitelisted and capped at
-  120 chars, and unrecognised text is only ever fuzzy-matched against a fixed
-  taxonomy. Nothing the model says can trigger an action.
-
-## Clinical engine
-
-`app/clinical.py` is a pure function: same input, same verdict, no model in the
-decision path. Checks run in this order:
-
-1. `DUPLICATE_SALT` — same molecule across two strips (critical).
-2. `PARACETAMOL_DAILY_MAX` / `_NEAR_MAX` — cumulative dose vs the 4000 mg ceiling.
-3. `INTERACTION` — 29 curated molecule pairs (bleeding, hyperkalaemia, nitrate +
-   PDE5, serotonin syndrome, dual RAAS blockade …).
-4. `DUPLICATE_CLASS` — two different molecules of one family (two NSAIDs, two ARBs).
-5.   `LASA_RISK` — look-alike / sound-alike strips: same brand family with different
-   contents (`Telma` vs `Telma-H`, `Pan 40` vs `Pan-D`, `Zerodol` vs `Zerodol-SP`,
-   `Glycomet` vs `Glycomet-GP`, `Montair` vs `Montair-LC`), cross-family spoken
-   collisions (`Amaryl`/`Amlopres`, `Metrogyl`/`Metolar`), and **verification**
-   prompts for shelf neighbours we will not resolve (`Loprin`/`Loprin-LS`).
-   The pass is split by scope: `_lasa_candidates()` reduces each strip to a
-   label, `_dual_strip_lasa_findings()` compares strips scanned together (with
-   the decision in `_lasa_pair_body_key()`), and `_single_strip_lasa_findings()`
-   handles the lone box that collides with something not in the photo.
-6. `UNRECOGNISED_MEDICINE` — never silently "safe".
-7. `NO_DANGEROUS_OVERLAP` — the safe path, still not a prescription check.
-
-`app/taxonomy.py` holds 48 molecules with their common Kerala brand names
-(Dolo/Crocin/Calpol, Telma/Telsartan, Glycomet, Pan 40, Thyronorm …) and 15
-fixed combinations (Telma-H, Combiflam, Montair-LC, Zerodol-SP, Augmentin,
-Ultracet …). Combination products resolve to *all* their molecules, which is how
-the engine catches "Telma-H + a separate HCTZ tablet".
-
-## Batch recall & expiry audit (Pass 29)
-
-The clinical engine asks whether the **combination** is dangerous. This asks
-whether the **box** is still fit to hand over — the question a pharmacy counter
-actually faces. It runs on the same request, in the same RAM buffer, with no
-network call, and its copy is localised like every other finding:
-
-| Code | Severity | Trigger |
-|---|---|---|
-| `RECALLED_BATCH` | critical | the printed batch falls inside a recall notice for that molecule or brand family |
-| `EXPIRED_STOCK` | critical | the printed expiry month is already in the past |
-| `EXPIRY_SOON` | warning | it expires this month or next |
-| `EXPIRY_UNREADABLE` | warning | an expiry is printed but cannot be parsed (**not** treated as fine) |
-| `COLD_CHAIN_RISK` | warning | the label names a 2–8 °C product (insulin, vaccine, oxytocin, adrenaline …) — a photo can never clear that |
-
-**Where the batch and date come from.** The vision tier reads `batch_number`
-and `expiry_date` off the same photo (B.No./Lot line and the EXP stamp); the
-manual path exposes two optional fields; the demo preset carries them as data.
-Empty means "not read", never "no risk" — no batch, no recall claim.
-
-**Expiry parsing** accepts what Indian foils actually print: `04/2026`,
-`4/2026`, `04-2026`, `04.2026`, `2026-04`, `04/26`, `APR 2026`, `APR26`,
-`APRIL 26`, with or without a leading `EXP`/`EXP: `/`USE BEFORE`. Anything else
-becomes `EXPIRY_UNREADABLE` rather than a silent pass.
-
-**Rendering.** Box findings are not one warning among many — a recalled batch or
-an expired foil is a reason not to hand the box over — so they render in a
-banner **above** the verdict: crimson for a recall or an expired date, amber for
-expiry-soon / unreadable / cold chain, with a badge, the localised title,
-message and action, and `role="alert"` so a screen reader announces it. They are
-removed from the list below so the same warning is never printed twice, and they
-stay in `safety.findings` and in the spoken script, so the audio pack gets a
-clip slot per code (`ml:RECALLED_BATCH`, `hi:EXPIRED_STOCK`, …) and the device
-voice reads the critical ones first.
-
-**Data honesty.** `app/recall.py` ships **four pilot notices** (metformin
-impurity, telmisartan potency, paracetamol dissolution, pantoprazole labelling).
-The refs are local trace labels (`PILOT-RCL-01`), **not** CDSCO citations, and
-the feed is offline by design so the demo cannot depend on a regulatory API. A
-real deployment replaces the `RECALLS` tuple with a signed feed; the matching
-code does not change.
-
-**Privacy.** The batch number and expiry are the same class of data as the
-drug name — no patient identifier, no retention. The audit is a pure function
-over the scanned list (`as_of` injected for tests), and a test pins that it
-writes nothing to disk.
-
-## Ground-truth knowledge base (Pass 30)
-
-`app/knowledge_base.py` is the layer between "what molecule is this brand?" and
-"what does a pharmacist in Kochi actually call this box?". It is **offline,
-pure and deterministic**, and it does two jobs.
-
-### 1. A verified Kerala shelf catalogue
-
-48 curated products (Telma-H, Dolo 650, Amaryl, Glycomet-GP, Pan-D, Augmentin
-625, Zerodol-SP, Montair-LC, Ultracet, Thyronorm, Ecosprin, Warf, Doxy …) each
-with its exact molecules, Indian pack strengths, drug form, plain-language
-cautions and an age band. Every molecule is checked against `app/taxonomy.py` by
-a test, so the knowledge base can never name a drug the clinical engine cannot
-rule on. On top of the products sit all 48 molecules and their 186 printed
-aliases, giving **256 searchable names** for one 48-molecule engine.
-
-The catalogue is published as `GET /knowledge.json` — brands, molecules,
-cautions localised in ml/hi/en, age bands, pharmacist notes. Drug data only: no
-patient data, no keys, nothing request-specific.
-
-### 2. A deterministic fallback for imperfect text
-
-When the vision tier or OCR hands back text the alias table cannot place, the
-request is resolved locally instead of failing:
-
-| Printed (OCR / vision) | Alias table alone | Knowledge base |
-|---|---|---|
-| `Glycomet GP` | metformin **only** — the glimepiride is silently lost | metformin + glimepiride |
-| `PAN D` | nothing (combo key is `pan-d`) | pantoprazole + domperidone |
-| `Augmentn 625` | amoxicillin only | amoxicillin + clavulanic acid |
-| `Telma H` | combo miss, telmisartan only | telmisartan + HCTZ |
-
-Matching is **space- and dash-insensitive** (`glycometgp` = `Glycomet-GP`) and
-then falls back to a similarity score with a hard floor of 0.88. A *more
-specific* answer always wins: only a proper superset of molecules replaces the
-alias table's result, which is what turns the first row above from a dangerous
-half-answer into the right one. Below the floor the matcher returns nothing and
-the app keeps asking the user — it never invents a drug.
-
-Each medicine carries `verified_by: "taxonomy" | "ground_truth"`, and the
-response carries `ground_truth_verified`, so the UI can show a green
-**“Ground-Truth verified”** line only when the local base actually answered. The
-badge is quiet emerald by design: verification is reassurance, not a warning,
-and it must never compete with the crimson recall banner.
-
-### 3. Age bands, when (and only when) an age is supplied
-
-`age_years` (optional, 0–120) enables `AGE_WARNING`: aspirin under 16, NSAIDs and
-sulfonylureas from 65, fluoroquinolones under 18, benzodiazepines under 18 and
-from 65. With no age the rule is silent — assuming 70 for everyone would make
-every NSAID scan cry wolf, and assuming nothing is honest. The finding is
-localised, spoken, and gets its own audio-pack slot (`ml:AGE_WARNING`).
-
-**Resilience.** If the provider is unreachable the photo path returns `200`,
-`manual_required`, `verdict: unknown`, a localised read-aloud prompt and
-`processed_in_memory: true` — never a 500, never a blank screen, still zero disk
-writes. `tests/test_knowledge_base.py` proves that with a provider that raises
-`ConnectError` on every call.
-
-## Dose reminders (Pass 31)
-
-The scan tells you what is wrong with the box; the reminder tells you when to
-take it. A patient who cannot read the prescription gets one tap: pick how many
-times a day, press **Set**, and the app speaks and posts the dose times in the
-language already selected.
-
-**The server does not schedule anything.** `POST /reminders` parses the typed
-schedule (`1-0-1`, `0-0-1`, `twice daily`, `BD`, `TDS`, `every 8 hours`), applies
-the same clinical strengths the scan uses, and returns a derived plan: clock
-times, a part-of-day label, per-slot speech and a full spoken script in en/ml/hi.
-The browser holds the plan in a variable and runs a 15-second `setInterval` — no
-storage, no id, no push service, no database table. It is lost when the tab
-closes, and the UI says so instead of pretending:
-
-> 08:00, 21:00-ന് ഓർമ്മപ്പെടുത്തൽ വെച്ചു. ഈ പേജ് തുറന്നിരിക്കുമ്പോൾ മാത്രം പ്രവർത്തിക്കും.
-
-**Refusals instead of guesses.** The parser returns a reason, not a schedule, for
-`SOS`/`as needed`/`PRN` (`as_needed`: take it when the doctor said), for anything
-it cannot read (`unsupported`, with the `1-0-1` example), for more than four
-tablets in one slot (`too_many`), and for a schedule that would push paracetamol
-past 4000 mg/day (`paracetamol_limit`). The last one matters: `3-3-3` of Dolo 650
-is 5850 mg and is refused with the number in the sentence, while `2-2-2` (3900 mg)
-is allowed — the reminder engine cannot contradict the clinical rules.
-
-**Countdown banner.** A scheduled plan paints a green banner above the findings —
-"അടുത്ത ഡോസ് 21:00 · 1 മണിക്കൂർ 0 മിനിറ്റ് കഴിഞ്ഞ്" — with a **Cancel** button. When
-the clock reaches a slot the app speaks the dose text and, if the browser allows
-notifications, posts a local `Notification` (no server, no key, no icon CDN). A
-browser without `Notification` still gets the spoken reminder; a browser without
-both still gets the banner text.
-
-**Ownership.** The plan belongs to the scan on screen: scanning a different set
-of medicines drops it, and switching language re-renders the banner in that
-language from the same in-memory plan. Nothing here is a prescription — the
-spoken script ends with "this is a reminder, not a prescription" in all three
-languages.
-
-| Layer | Change |
-|---|---|
-| `app/audio_reminders.py` **(new)** | `parse_schedule()`, `slot_for_time()`, the paracetamol-daily check, `build_plan()`, and the request/response models |
-| `app/main.py` | `POST /reminders` (thread-pool, `no-store`) |
-| `app/i18n.py` | 17 new keys: intro, four parts of day, dose sentence, singular/plural units, caveat, confirmation, and the four refusal reasons |
-| `static/js/reminders.js` **(new)** | `nextDose`, `formatLeft`, `isDue` — pure date arithmetic, unit-tested in Node |
-| `static/js/app.js` | Panel visibility, `POST /reminders`, banner, 15-second clock, `Notification`, cancel, per-scan invalidation |
-| `static/index.html`, `static/css/styles.css` | Reminder panel and countdown banner, 44 px targets, high-contrast emerald |
-| `static/sw.js` | Precache `reminders.js` and `knowledge.json`; cache `kathapulse-v7` → `v8` |
-| Tests | `tests/test_audio_reminders.py` (67) and `tests/js/reminders.test.mjs` (16) |
-
-## Architecture and consolidation (Pass 32)
-
-By Pass 31 the app had six feature passes bolted onto one another, and the seams
-showed: the same clinical limit was written down twice, the same card was built
-twice in JavaScript, and the result screen had grown so tall that the warnings
-sat below the fold on a small phone. Pass 32 removes those seams without adding
-a feature. Nothing here changes a warning, a verdict or a wire field — the whole
-suite is the regression test, and it is green with **no test edits**.
-
-### One owner per fact
-
-| Fact | Was | Is |
-|---|---|---|
-| Paracetamol ceiling | `clinical.PARACETAMOL_DAILY_MAX_MG = 4000.0` **and** `audio_reminders.PARACETAMOL_DAILY_MAX_MG = 4000.0` | `app.clinical` only; the reminder module reads it and uses `clinical.PARACETAMOL_CANONICAL` instead of a string literal |
-| Tri-lingual bundle | `audio_reminders._text()` rebuilt `i18n.language_text()` | `i18n.language_text()`, one implementation |
-| `VerifyResponse` body | hand-built in `/verify-strip` (twice) and `/verify-medicines` | `_verify_response()` + `_status_for()` in `app/main.py` |
-| Finding card DOM | 25 duplicated lines in `renderBatchBanner` and `renderResult` | `findingNode(finding, prefix, options)`; `.finding-*` and `.batch-item-*` share it |
-| Text fallback | `text[language] \|\| text.en` in four places | `localised(text)` |
-| Finding card CSS | `.finding-*` and `.batch-item-*` written out twice | one rule set with grouped selectors |
-
-Measured effect: `app/main.py` 491 → 513 lines (the builders plus their
-docstrings), `static/js/app.js` 1117 → 1115, `static/css/styles.css` 650 → 668
-(shared selectors, added small-screen rules), and **zero duplicate CSS selector
-blocks** (checked programmatically). Code volume was never the goal; the goal was
-one definition per fact, so the next pass cannot fix a rule in one place and
-leave a stale copy in another.
-
-### The result screen, top to bottom
-
-The order now matches what a patient needs first:
-
-1. recall / expiry banner (why not to hand the box over)
-2. verdict
-3. provenance line, LISTEN, and the always-visible script
-4. live reminder countdown, if one is running
-5. findings
-6. detected medicines (collapsed)
-7. the dose-reminder form, then the disclaimer
-
-The reminder **form** moved below the findings: it is a next step, not a warning,
-and it was pushing the actual safety list off a 320px screen.
-
-### 320px decisions
-
-`@media (max-width: 360px)` now narrows `main` to 12px gutters, trims the verdict
-padding and icon, and stacks the reminder select/button and the countdown's
-cancel button to full width, so nothing is squeezed into a 150px tap target.
-Long Malayalam molecule names break inside finding titles and messages
-(`overflow-wrap: break-word`) — the one place this build accepts a mid-word break,
-because a `320px` column cannot fit `ഹൈഡ്രോക്ലോറോത്തയാസൈഡ്` whole and sideways
-scrolling is worse.
-
-**Pass 32 note (superseded):** that pass could not measure the layout — jsdom
-does not lay out and there was no browser engine. Pass 33 measured it (below).
-
-## Pre-submission hardening (Pass 33)
-
-Pass 33 adds no subsystem. It makes three claims the product already implied
-actually checkable, and it measures the layout Pass 32 could only reason about.
-
-### Explainable identification
-
-Every scan now returns one `evidence` row per strip with a **field-level**
-status, not a score:
-
-| Field | "matched" / "verified" means |
-|---|---|
-| Medicine name | the label resolved **and** the reading tier did not report itself unsure |
-| Strength | the number came from the foil (including a strength printed in the brand, `Dolo 650`) or from the brand's fixed-combination record — never from a molecule default |
-| Active ingredient | a database confirmed the molecule, and the row names which one (`taxonomy` or `ground_truth`) and the catalogue's review date (`knowledge_base.CATALOGUE_VERIFIED_ON`) |
-
-The card renders under the warnings (safety keeps its place under the verdict).
-A molecule-level default strength shows as **Unverified**, because the camera did
-not read it.
-
-### Confidence gate
-
-The vision prompt now asks for `confidence: high|medium|low` per strip:
-
-| Reported | Behaviour |
-|---|---|
-| `low` | refused **before matching** (`rejection: low_confidence`, `matched: false`); the UI says the scan was rejected and asks for a new photo |
-| `medium` | the molecules still resolve, but `recapture_required` is set: the verdict is held at **Could not verify**, the green provenance badge is withheld, and the retake prompt is what LISTEN reads |
-| absent / unrecognised | nothing changes — a model that reports nothing is neither promoted nor rejected |
-
-OCR has no self-report, so its confidence is derived honestly: a line that is an
-exact catalogue entry is `high`; anything that needed the fuzzy step is `medium`.
-Manual entry carries no confidence at all.
-
-### Pharmacovigilance caveat
-
-`batch_disclaimer` (tri-lingual, `i18n` key `pharmacovigilance`) ships on both
-`VerifyResponse` and `BatchVerifyResponse` and renders inside the batch/recall
-banner: *"A batch with no warning is not guaranteed to be safe, genuine, or free
-from quality defects. This check covers the pilot recall list and the printed
-dates only."*
-
-### Reminder audio across three languages
-
-The dose announcement is now a pure function in `reminders.js`
-(`doseAnnouncement(speech, lang, hasVoice)`). When the selected language has no
-installed voice it falls back to the English recording, and the chosen language
-label always follows the text actually read — the synthesizer is never told to
-pronounce Malayalam with a Hindi voice. The dose text is also printed in the
-banner, so a phone with no voice pack is never silent.
-
-### Measured layout (real browser, not jsdom)
-
-Measured in the cloud Chromium at both widths, on the recalled-batch demo and on
-a stubbed medium-confidence response, with service-worker caches cleared:
-
-| Viewport | `scrollWidth` / `clientWidth` | Overflow | Notes |
-|---|---|---|---|
-| 320px | **305 / 305** | none | batch banner, caveat, evidence card, recapture card all render; smallest tap target 58px |
-| 360px | **345 / 345** | none | Hindi evidence card and provenance line, no overflow |
-
-Two real defects were found **only** by looking:
-
-1. `select#pattern` kept its `min-width: auto` longest option and pushed the page
-   12px sideways at 320px. `.reminder-row > *` now has `min-width: 0;
-   max-width: 100%`.
-2. `.gt-badge { display: flex }` and `.reminder-banner { display: flex }`
-   overrode the `[hidden]` attribute, leaving an empty green check badge (and an
-   empty cancel-reminder band) on every result screen. `[hidden] { display: none
-   !important }` makes the attribute win.
-
-### Verification
-
-```
-$ ./.venv/bin/pytest -o addopts="" -q
-348 passed, 1 warning
-$ cd tests/js
-state 18/18 · retry 4/4 · exif-scrub 15/15 · audio-pack 10/10 · audiopack 17/17
-presets 9/9 · recall 13/13 · groundtruth 12/12 · reminders 21/21   (119 frontend checks)
-```
-
-`tests/test_confidence_evidence.py` (16 checks) is new; `reminders.test.mjs`
-gained 5 announcement checks. No existing assertion was changed. Service-worker
-cache is `kathapulse-v10`; the API version is `1.6.1`.
-
-**Still not verified:** a live Groq extraction (no key in this environment —
-`scripts/check_vision.py` reports `manual_required`), audible playback on a real
-device (headless Chromium has no ml-IN/hi-IN voice, so the UI correctly showed
-its fallback), and a real recall feed (the list is curated pilot data).
-
-## Submission pack (Pass 34)
-
-Documentation only — **no application code changed** in this pass. Three documents
-and one script make the project auditable without reading the history:
-
-| File | What it is for |
-|---|---|
-| `docs/SUBMISSION_OVERVIEW.md` | Problem/solution framing, verified file tree, **honest six-product comparison matrix** (Pill IQ, PharmaScan AI, MedLingual, MedScan, MedicineWatch India, DoseBell), privacy posture, limitations |
-| `docs/VALIDATION_REPORT.md` | Test-backed clinical interaction and paracetamol-ceiling audit, 81-key tri-lingual coverage, offline/rejection error handling, corrected failover description, residual risks |
-| `docs/NEURAVIZ_STAGE4_CHECKLIST.md` | Stage 4 finalist alignment to the 10 December 2026 deadline, live-vision status, preview recovery, physical-phone protocol, four-screenshot capture runbook, voiceless demo script, archive instructions |
-| `scripts/make_submission_archive.sh` | `git archive` ZIP from HEAD; refuses forbidden paths and real credential shapes |
-
-Three brief premises were corrected rather than copied into the docs:
-
-1. **"Headless sandbox cannot render Chromium screenshots"** — false here. Pass 33
-   rendered the app in cloud Chromium and measured 320 px (`305/305`) and 360 px
-   (`345/345`), zero overflow. The screenshots are git-ignored artefacts and can
-   be regenerated; a physical-phone check is still recommended.
-2. **"Dual-provider Groq-to-Gemini failover"** — the code supports a **second key**
-   for one OpenAI-compatible endpoint (`KATHA_VISION_API_KEY_FALLBACK`), with
-   rotation on 401/403/429. There is no Gemini adapter and none is claimed.
-3. **"DoseBell"** — no public product under that name could be verified. The
-   comparison table includes the row and says so, rather than inventing features.
-
-Counts in this build: **348 backend checks**, **119 frontend checks**, 48 molecules,
-256 indexed catalogue names, 4 curated recall notices, service worker `v10`.
-
-### Stage 4 finalist update (Pass 35)
-
-Documentation only again — no application code changed. The checklist was renamed
-to `docs/NEURAVIZ_STAGE4_CHECKLIST.md` and now targets the **10 December 2026**
-final-stage upload: the three-deliverable package (summary, report/presentation,
-optional demo link), the **verified** live-vision status (`vision_keys: 0`,
-`manual_required`, with the exact secret/restart steps), preview recovery after an
-idle checkpoint drops `.venv`, a physical-phone protocol for audible `ml-IN`/
-`hi-IN` speech, 320–360 px touch comfort and the `kathapulse-v10` offline cycle, a
-step-by-step runbook for the four required screenshots, and a 60–90 second
-voiceless demo script with a rule that stubbed responses are labelled
-**"simulated confidence response"**. The public challenge page still advertises
-an extended general date for the earlier stages; the portal's finalist date
-governs, and the checklist says so.
-
-## Tests
+## 12. Testing
 
 ```bash
-./.venv/bin/pytest                 # 348 backend: rules, LASA, accuracy, vision, failover, batch audit, knowledge base, dose reminders, confidence/evidence, e2e, offline/relay/hardening/ratelimit/audio
-./.venv/bin/pytest tests/test_failover.py   # 16 dual-key rotation checks on their own
-./.venv/bin/pytest tests/test_recall.py     # 56 recall / expiry / cold-chain audit checks on their own
-./.venv/bin/pytest tests/test_knowledge_base.py  # 59 ground-truth matching, cautions, age bands and fallback checks
-./.venv/bin/pytest tests/test_audio_reminders.py # 67 schedule parsing, translations, paracetamol ceiling, zero-persistence checks
-cd tests/js && npm ci && npm test        # 15 EXIF-scrub checks (npm ci: the lockfile is committed)
-cd tests/js && node state.test.mjs       # 18 state-machine / error-surface / retry checks
-cd tests/js && node retry.test.mjs       # 4 DOM-level retry checks (jsdom + app.js)
-cd tests/js && node presets.test.mjs     # 9 live preset checks — needs ./scripts/serve.sh running
-cd tests/js && node audio-pack.test.mjs  # 10 audio-pack loader, script and fallback checks (no jsdom, no network)
-cd tests/js && node audiopack.test.mjs   # 17 DOM-level checks: app.js drives playScript, or falls back to speech in en/ml/hi
-cd tests/js && node recall.test.mjs      # 13 DOM-level checks: recall/expiry banner, ml+hi copy, pack slot per code, typed batch
-cd tests/js && node groundtruth.test.mjs # 12 DOM-level checks: verified badge in ml/hi, age warning + its clip, age sent request-level
-cd tests/js && node reminders.test.mjs   # 21 checks: the clock arithmetic, tri-lingual announcement fallback, panel, POST body, countdown banner, refusals, cancel
-# Backend / next-gen surface covered by tests/test_nextgen.py: /sw.js, /taxonomy.json,
-# POST /verify-strips/batch (1-5 strips) and the zero-retention /ws/relay handshake.
+# 348 backend checks
+./.venv/bin/pytest -o addopts="" -q
+
+# focused suites
+./.venv/bin/pytest tests/test_failover.py        # 16 dual-key rotation checks
+./.venv/bin/pytest tests/test_recall.py          # 56 recall / expiry / cold-chain checks
+./.venv/bin/pytest tests/test_knowledge_base.py  # 59 catalogue, matching, age-band checks
+./.venv/bin/pytest tests/test_audio_reminders.py # 67 schedule, ceiling, zero-persistence checks
+
+# 119 frontend checks (Node 20+)
+cd tests/js && npm ci
+node state.test.mjs        # 18   state machine + error surface
+node retry.test.mjs        # 4    DOM retry path
+node exif-scrub.test.mjs   # 15   real JPEG codec EXIF removal
+node audio-pack.test.mjs   # 10   clip loader / fallback
+node audiopack.test.mjs    # 17   DOM audio tier wiring
+node presets.test.mjs      # 9    live API presets — needs ./scripts/serve.sh
+node recall.test.mjs       # 13   recall/expiry banner
+node groundtruth.test.mjs  # 12   verified badge + age rule
+node reminders.test.mjs    # 21   dose clock + tri-lingual announcement
 ```
 
-The preset suite is the integration one: it POSTs the three demo scenarios to the
-running app, then clicks each `data-demo` button in jsdom and asserts the card
-colour, the Malayalam/Hindi copy and the exact string handed to Web Speech. Start
-the server first (`./scripts/serve.sh`); point it elsewhere with
-`KATHA_BASE_URL=http://127.0.0.1:8000 node presets.test.mjs`.
-
-### Continuous integration
-
-`.github/workflows/ci.yml` runs both halves on every push and pull request, in
-two independent jobs so a backend failure does not hide a frontend one:
-
-| Job | Steps |
+| Suite | Result in this build |
 |---|---|
-| **Backend** | Python 3.12 → `pip install -r requirements.txt` → `pytest` |
-| **Frontend** | Python 3.12 + Node 20 → `pip install -r requirements.txt` → `npm ci` → start uvicorn on `127.0.0.1:3004` and poll `/health` → the nine Node suites, one step each |
+| Backend `pytest` | **348 passed** |
+| Frontend Node suites | **119 passed** (18 + 4 + 15 + 10 + 17 + 9 + 13 + 12 + 21) |
+| Duplicate-salt corpus (44 labelled cases) | 100% accuracy, 100% precision, 100% recall |
+| Knowledge-base audit (`scripts/audit_knowledge_base.py`) | **256/256 names**, 0 structural failures, exit 0 |
 
-The preset suite is the reason CI starts the server at all: it is the only test
-that talks to the real API. The app is started with **no** vision keys, so CI
-exercises the degraded path a judge also hits, and never needs a secret.
-`tests/js/package-lock.json` is committed for this (`npm ci` needs it; every
-other `package-lock.json` stays ignored). The workflow was syntax-checked and
-every command in it was executed locally — GitHub's own runner has not run it,
-which needs a push this sandbox is not authorised to make.
+CI (`.github/workflows/ci.yml`) runs backend and frontend as two independent jobs on every push and
+pull request. The preset suite is why CI starts uvicorn — it is the only test that talks to the real
+API, and it runs with **no** vision keys, exercising the same degraded path a judge sees.
 
-Measured results from this build:
+---
 
-| Check | Result |
-|---|---|
-| Backend suite | **348 passed** (265 + 67 reminder + 16 confidence/evidence checks) |
-| Duplicate-salt corpus (44 labelled cases) | **100% accuracy, 100% precision, 100% recall, 100% correct salt** |
-| EXIF scrub (real JPEG codec, dirty input → clean output) | **15/15 checks passed** |
-| Client state machine + error surface | **18/18 checks passed** |
-| Retry path, executed in a DOM (jsdom) | **4/4 checks passed** — fails 3/4 if the Pass 4 defect is reintroduced |
-| Audio pack wiring, real DOM (Passes 24-25) | **17/17 checks passed** — clips present → `playScript` runs intro/findings/outro and the device voice stays silent; clips missing → nothing half-plays and the device voice takes over |
-| Live demo presets, real API + real DOM | **9/9 checks passed** — Telma pair, Dolo+Crocin and Amaryl each render the expected card (32 ms on the cold first call, then 7 ms and 4 ms), and the speech handoff carries the same Malayalam string the API returned |
-| Batch recall & expiry banner, real API + real DOM | **13/13 checks passed** — a recalled, expired batch renders a crimson `role="alert"` banner above the verdict in Malayalam and Hindi, is not repeated in the findings list, gets one audio clip per code, and the preset POSTs `batch_no`/`expiry`; a near-expiry box renders the same banner in amber |
-| Dose reminders, pure clock + real DOM | **21/21 checks passed** — the next slot rolls to tomorrow when today's has passed, `SET` posts only `{name}` per medicine, a scheduled plan paints a localised countdown banner, an SOS refusal paints none, cancel clears it, a new scan cannot inherit the old plan, and a missing ml/hi voice falls back to English audio instead of silence |
-| Confidence gate + evidence, API + real DOM | **16/16 backend checks** — a low-confidence read is refused before matching, a medium one is flagged for retake with a provisional verdict, evidence never marks a default strength as read, provenance carries the database and review date, and the pharmacovigilance caveat ships tri-lingual on both single and batch responses |
-| Batch audit engine | **56/56 checks passed** — 15 printed expiry shapes parsed, 9 refused as unreadable, recall matching by molecule/brand/batch prefix, no claim without a batch, cold-chain flag, tri-lingual copy, deterministic date injection, nothing written to disk |
-| Ground-truth knowledge base | **59/59 checks passed** — 256 indexed names, every curated molecule exists in the taxonomy, `Glycomet GP` → metformin + glimepiride while the alias table answers one, OCR slips resolved, nonsense never matched, age bands only where a label states one, provider `ConnectError` → `200`/`manual_required`, no disk writes |
-| Verified badge + age rule in a DOM | **12/12 checks passed** — badge shown only for a ground-truth match, Malayalam and Hindi copy, age warning rendered amber and spoken, `AGE_WARNING` clip requested, age sent as a request field (never inside a medicine) |
-
-## Demo presets
-
-Five one-click buttons above the camera run the pilot cases through
-`POST /verify-medicines`, so a live demo never depends on a camera, a steady
-hand, or a vision key:
-
-| Preset | Expected result |
-|---|---|
-| Telma 40 + Telma-H | `critical` — duplicate telmisartan **and** LASA (same foil family) |
-| Dolo 650 + Crocin Cold & Flu | `critical` — dual paracetamol (1300 mg at once) |
-| Amaryl 1 mg | `caution` — LASA advisory: sounds like Amlopres, a different drug |
-| Glycomet 500 · batch audit (`GM2407A`, `09/2026`) | `critical` — recalled batch **and** an expired foil, in the banner above the verdict |
-| Glycomet GP · ground truth | `safe` — metformin + glimepiride verified locally, green badge shown |
-
-The third case is a **single-strip** LASA check: the curated sound-alike table
-also fires on one box, because the confusion happens before a second box exists.
-Brand-family checks (Telma/Telma-H) deliberately need two strips, or every
-Telma scan would cry wolf.
-
-A preset and the manual textarea are the same scan, so they share one handler
-(`runNamedScan()` in `app.js`): one request, one pair of state transitions, one
-retry wiring. `runPreset()` only maps a `data-demo` id to its names, and the
-busy guard is inside the shared handler, so a double tap cannot post twice.
-
-## Kochi pilot scenarios
-
-Pilot setting: OP pharmacy counters and homes around Kochi/Ernakulam — Angamaly,
-Aluva, Kakkanad — where Malayalam-branded paracetamol and the Telma/Telma-H pair
-are the everyday confusions. The user is the person holding the strip, not a
-clinician, often on a low-end Android with patchy data.
-
-| Scenario | Scan | Required output |
-|---|---|---|
-| Fever, two brands brought together | Dolo 650 + Crocin Cold & Flu | `critical` — same paracetamol twice, 1300 mg at once; do not take both |
-| BP refill mix-up at the counter | Telma 40 + Telma-H | `critical` — duplicate telmisartan (and HCTZ) **plus** a LASA warning about the same foil family |
-| Diabetes shelf neighbour | Glycomet + Glycomet-GP | `warning` — same brand family, different contents, verify before taking |
-| Sound-alike, one box only | Amaryl 1 mg | `warning` — sounds like Amlopres, a different drug |
-| ASHA home visit, no signal | any strip | localised error card with Retry; never a blank or English-only screen |
-| Elderly user, phone has no `ml-IN` voice | any | the warning is still on screen in large type, in an amber "read this" state |
-
-These are acceptance targets for the pilot, **not** measured field outcomes: the
-three preset rows are reproducible today through `POST /verify-medicines`, while
-the offline-voice and ASHA rows are covered by logic tests and still need a
-human on a real handset (see Known limitations).
-
-## Retry semantics
-
-Retry after a failure restores a *clean* run rather than repeating one call:
-
-* the file input is cleared (`value = ""`) so the **same photo** fires `change` again;
-* the error card, status line and speech fallback are reset;
-* the state machine returns to `idle` and the failed action re-enters the flow
-  from the top, so the spinner and busy guards come back with it;
-* a capture failure retries by **reopening the camera** (re-calling `shoot()`
-  would throw "camera is not running" and loop), and a running camera stream is
-  reused rather than opened twice — on Android the second session kills the first.
-
-Repeated failure→retry cycles are covered twice: `state.test.mjs` exercises the
-transition table, and `retry.test.mjs` runs the real `app.js` against `index.html`
-in jsdom with a scripted `fetch` (fail → click Retry → assert a second request,
-a cleared input and a rendered result). Reintroducing the original defect makes
-that suite fail 3/4, so it is a genuine regression guard rather than a
-restatement of the fix.
-
-## Client orchestration (Pass 4)
-
-`static/js/state.js` is a pure state machine — no DOM, no fetch — so the whole
-scan lifecycle is testable in Node:
+## 13. Repository layout
 
 ```
-idle ─CAMERA_OPENED→ camera_ready ─CAPTURE_START→ capturing
-  │                                                    │
-  └─FILE_SELECTED→ scrubbing ─SCRUB_DONE→ uploading ─UPLOAD_OK→ rendering
-                                                                      │
-                          error ←─(any failure)─┐              SPEECH_START
-                             └─RETRY→ idle        └────── speaking ─SPEECH_END→ idle
+kathapulse-ai/
+├── app/                        FastAPI service — no writable path, no database
+│   ├── main.py                 6 endpoints + 1 WebSocket relay, 513 lines
+│   ├── extraction.py           vision → OCR → manual tiers, confidence gate
+│   ├── clinical.py             duplicate salt, 4000 mg ceiling, 29 interactions, LASA
+│   ├── knowledge_base.py       48 brands / 256 names, provenance 2026-11-25
+│   ├── recall.py               4 pilot notices, expiry parsing, cold chain
+│   ├── audio_reminders.py      schedule parser + derived plan
+│   ├── schemas.py              Pydantic v2, extra="forbid"
+│   ├── taxonomy.py             48 molecules, 15 fixed combinations
+│   ├── i18n.py, languages.py   81 keys × ml/hi/en, language registry
+│   └── ratelimit.py, relay.py  sliding-window backstop, guarded relay stub
+├── static/                     PWA shell (frozen for this pass)
+│   ├── index.html, css/        high-contrast dark UI, 44–58 px targets, 320 px rules
+│   ├── js/                     capture (EXIF scrub), state, speech, audio pack, reminders
+│   ├── sw.js                   cache kathapulse-v10
+│   └── audio/manifest.json     clip manifest (ships empty)
+├── tests/                      14 backend files (348 checks) + 9 Node suites (119)
+├── docs/                       submission overview, validation report, Stage 4 checklist
+├── deploy/                     nginx + Cloudflare rule sets
+├── scripts/                    serve.sh, vision check, KB audit, pack builder, archive
+├── evidence/                   Stage 4 captures (git-ignored, shipped in the upload pack)
+├── Dockerfile, Procfile        two runner declarations for the same ASGI object
+└── .github/workflows/ci.yml    backend + frontend jobs
 ```
 
-Out-of-order events are no-ops (a late shutter tap cannot corrupt the screen),
-and a failure raised from a state with no path for it falls through to a
-wildcard `FATAL`, so **the error card always appears** — that behaviour is
-tested, not assumed.
+---
 
-Error handling in `app.js`:
+## 14. Documentation & governance
 
-* **20 s request timeout** via `AbortController`, classified as `timeout`.
-* **Classification** into `timeout | offline | network | too_large | bad_type |
-  bad_request | server | image_failed | camera_denied | unknown`, each with
-  Malayalam, Hindi and English copy (no English-only fallback).
-* **Retry** re-runs the exact action that failed (camera, capture, upload, manual submit).
-* **Global `error` / `unhandledrejection` listeners** route to the same card, so a
-  stray throw never leaves a dead screen.
-* **`offline` event** surfaces immediately instead of waiting for a timeout.
-
-## Evaluation against the Inspector checklist
-
-| Criterion | Result | Evidence / caveat |
-|---|---|---|
-| Client-side privacy (EXIF scrubbed) | **Pass** | Runtime test builds a JPEG carrying GPS + `DateTimeOriginal` + device serial, runs the shipped `capture.js` through a real encoder, and asserts no APP1/COM segment or marker string survives while the image still decodes. Verified with a real JPEG codec in Node, **not** in a mobile browser — the sandbox has no browser and system libraries for Chromium were unavailable. |
-| RAM ephemerality | **Pass** | Upload buffered to `bytes`, response flag `processed_in_memory: true`, AST test forbids `tempfile`/`open()`/`shutil` in the request path. |
-| Duplicate-salt accuracy (>95%) | **Pass** | 100% on 44 labelled cases including brand/molecule mixes, combination products and OCR-style slips. Caveat: the corpus is hand-built; it is not a statistically sampled pharmacy set. |
-| Linguistic clarity | **Pass (not native-reviewed)** | Malayalam and Hindi copy written for short-sentence, plain-register reading, with drug names transliterated as printed on the strip; speech runs at 0.85× and splits into <170-char chunks because Android truncates long utterances. A native speaker has **not** reviewed the copy — recommend one pass with a Malayalam-speaking pharmacist before pilot. |
-| LASA risk rendering | **Pass** | `LASA_RISK` findings render through the same high-contrast card as duplicate-salt warnings, anchored on the *printed label* (what the user sees on the foil), not the molecule name. |
-| Speech fallback (offline-resilient) | **Pass (logic verified, no audio heard)** | The warning script is always rendered on screen; if `speechSynthesis` is missing or has no `ml-IN`/`hi-IN` voice, the panel switches to an amber "read this" state instead of throwing. Chunking keeps utterances under 170 chars because Android truncates long ones. |
-| Preview accessibility | **Pass (local + Host-header verified)** | Supervised server on `0.0.0.0:3004`; `GET /` → 200 (8.1 KB), all six `/static/*` assets → 200 (CSS 17 KB, four JS files 4.9–27.8 KB, `favicon.svg` 295 B) and `/favicon.ico` → 200 (SVG, 295 B), so a live page load shows zero 404/403 requests in the browser console. Killing the worker process itself, the supervisor restarts it and the next request still returns 200. The public `*.style.dev` URL answers 403 to any request without the owner's session — that is the preview auth gate, not a refused connection. |
-| LASA detection accuracy | **Pass** | `Amaryl`+`Amlopres` → spoken-collision alert; `Telma 40`+`Telma-H` → LASA **and** duplicate salt; `Zerodol`+`Zerodol-SP`, `Pan 40`+`Pan-D` likewise; `Loprin`+`Loprin-LS` → verification wording, no composition claim. Every alert carries full Malayalam and Hindi copy. |
-| Regression safety | **Pass** | 132 pytest (87 original + 14 next-gen + 16 hardening + 10 rate-limit + 5 audio pack), 18/18 state machine, 4/4 DOM retry, 15/15 EXIF, 10/10 audio pack (JS) and 9/9 live preset checks. No pre-existing test was modified to accommodate a change; the Pass 9 refactor ran the whole set unchanged and produced byte-identical warning copy for all three presets (587 / 260 / 330 characters). |
-| RAM ephemerality | **Pass** | AST test still walks `main.py` and `extraction.py` for `tempfile`/`open()`/`shutil`; vision bytes go out as a base64 data URL, OCR decodes from `io.BytesIO`. |
-| End-to-end flow | **Pass (logic verified)** | `tests/test_e2e.py` drives a real multipart POST through validation → extraction → rules → JSON with cards, speech script and flags. The camera→canvas→fetch→speech chain is covered by the EXIF suite + state-machine suite + live server calls; a human still has to tap it on a phone, which I could not do here. |
-| Error resilience | **Pass** | Timeout, offline, 413/415/422/5xx, camera denial, unreadable image and missing speech API all land on   a localised card or the amber read-aloud fallback. 18/18 state checks, including "FATAL from every state". |
-| UI/UX compliance | **Pass (not visually reviewed)** | Slate base, emerald safe/primary, amber caution — with crimson reserved for `critical`. That is a deliberate departure from "emerald/slate/amber": a life-threatening duplicate must not share a colour with "check this". 18–25px type, 58px targets, zero-clutter stepper. |
-| Security verification | **Pass** | EXIF suite + AST test + `no-store` headers + magic-byte and 6 MiB limits + `forbid` schemas + injection blocklist (422 on attempt). No accounts, no cookies, no disk writes. |
-| Secret hygiene | **Pass** | Key read from env/`.env` per request; `.env` gitignored and verified with `git check-ignore`; no key material anywhere in `app/`, `static/`, `scripts/` or `tests/` (grep sweep); `/health` exposes endpoint and model only; a test asserts the key never reaches logs or responses. |
-| Live vision extraction | **Blocked on the key** | The Groq tier is implemented and covered by 19 stubbed tests (endpoint, auth header, data-URL shape, fence tolerance, brand+strength mapping, 401/500/nonsense degradation, no-key → no network call). It cannot be *demonstrated* until `KATHA_VISION_API_KEY` is present in the environment — `scripts/check_vision.py` is the one-command proof. |
-| Release package | **Pass** | `requirements.txt` pins match the installed, tested versions exactly (fastapi 0.115.6, uvicorn 0.34.0, pydantic 2.10.4, python-multipart 0.0.20, httpx 0.28.1, pytest 8.3.4); `Dockerfile` (non-root, healthcheck) + `.dockerignore` (keeps `.env` out of the image) + `Procfile` added; `uvicorn` started from the declared command serves `/`, all six `/static/*` assets, `/sw.js`, `/taxonomy.json` and `/health`; a real POST leaves no upload artifact on disk. Caveat: the image was not built (no Docker daemon access in this sandbox). |
-| Production readiness | **9.5/10** | Environment-only config read per request, `/health`, supervised server, container + Procfile, pins matching the tested versions, tests for every layer, and CI on every push (backend + frontend). Missing for a hospital pilot: a live vision key, a deployed edge rule set and a licensed drug database. |
-| Code quality | **9/10** | Modular (schemas / taxonomy / clinical / extraction / i18n / state / capture / speech / app), typed, commented on *why*, no dead code, CI enforced. Loses one point for the hand-curated taxonomy. |
-
-## Next-gen roadmap (Pass 18)
-
-Four scaling features are specified here. Two are implemented and tested in this
-build (offline shell, batch basket scan), one is implemented as a guarded stub
-(pharmacist relay), and one is an architecture plan with no code yet (WASM audio
-pack). Each stays inside the two hard rules: **nothing about a patient is written
-to disk or retained server-side**, and **no feature may make the warning harder to
-read** for a 70-year-old.
-
-### 1. Offline-first PWA shell — implemented
-
-`static/sw.js`, served from `/sw.js` (root scope, `Service-Worker-Allowed: /`) so
-it controls the whole app rather than just `/static/`. Registered from `app.js`
-after `load`, and failing registration is silent by design.
-
-| Request | Strategy | Why |
-|---|---|---|
-| Navigation (`/`) | network-first, cached shell fallback | a deploy shows up immediately on good signal, and the app still opens with no signal |
-| `/static/*`, `/taxonomy.json` | cache-first (stale-while-revalidate) | the cached copy answers immediately; a fresh copy lands in the background for the next visit. Cache-first without revalidation would pin a stale stylesheet forever, so the revalidate half is deliberate |
-| Any non-GET (every scan POST) | untouched | a photo upload is never cached, queued or replayed |
-| Cross-origin | untouched | the app is same-origin by CSP already |
-
-`CACHE_VERSION` is bumped per asset change and old caches are deleted on
-`activate`. Precaching uses individual `cache.add()` calls so one missing URL
-cannot leave the app with no cache. `GET /taxonomy.json` is the new public feed
-that makes offline lookup possible: drug data only, no keys, no request data.
-Note what this is *not*: the Cache API is client-side storage on the patient's own
-phone, so server-side zero persistence is unchanged.
-
-### 2. Batch multi-strip scanning — implemented
-
-`POST /verify-strips/batch` (multipart, 1–5 `strips` files — the 3–5 strip basket
-is the realistic polypharmacy case — plus `language` and
-`paracetamol_taken_today_mg`) returns:
-
-```json
-{"strip_count": 2,
- "strips": [{"strip_index": 0, "medicines": [...], "safety": {...}},
-            {"strip_index": 1, "medicines": [...], "safety": {...}}],
- "combined": {"verdict": "critical", "findings": [...], "speech": {...}},
- "processed_in_memory": true}
-```
-
-`app/extraction.py:extract_batch()` reads the payloads with a concurrency cap of
-3, so a five-strip basket cannot fire five vision calls at once from a cheap
-phone's connection. `app/clinical.py:analyse_basket()` returns a `BasketReport`:
-each strip analysed alone *and* the whole basket analysed as one set. The combined
-pass is the clinically important one — a duplicate salt or a LASA pair usually
-only appears when two strips meet (there is a test for exactly that: two harmless
-strips, one critical basket). Every upload goes through the same magic-byte, 6 MiB
-and content-type checks as a single scan and is released as soon as it is read.
-
-### 3. Pharmacist verification relay — guarded stub
-
-`ws://…/ws/relay/{room_id}?ticket=<expiry>.<hmac>` (`app/relay.py`).
-
-* **Refuses everything unless `KATHA_RELAY_SECRET` (16+ chars) is set**, so an
-  unconfigured deployment cannot become an open relay.
-* Tickets are `HMAC-SHA256(secret, "room:expiry")[:32]`, valid for 120s with a
-  30s skew window, compared in constant time. Issuing one belongs to the
-  pharmacy's own backend; this service only verifies.
-* Rooms are opaque codes, capped at 8 peers, and messages are capped at 2 KB.
-  A frame is forwarded to the other sockets in the room and then dropped: no
-  queue, no transcript, no replay, no logging, no database. When the last peer
-  leaves, the room object is deleted.
-* `/health` and `relay.HUB.stats()` expose aggregate counts only.
-
-Production notes before this touches a real pharmacy: terminate TLS and use
-`wss://`, move rate limiting in front of the handshake, add message-level
-signing for the pharmacist's identity, and audit the relay under the same DPDP
-review as the scan path.
-
-### 4. WASM local audio pack — architecture only
-
-Today speech goes through the Web Speech API, which is silent on any phone
-without a Malayalam voice (the UI says so rather than reading English aloud).
-The plan is to ship the warning audio itself:
-
-1. **Pack format.** One short clip per `(finding.code, language)` — roughly 30
-   lines of Malayalam and Hindi, encoded as Opus in WebM at 24 kbps mono (about
-   8–12 KB each, under 1 MB for the whole pack). Pre-rendered by a professional
-   Malayalam/Hindi voice, reviewed by a clinician, versioned with the taxonomy.
-2. **Delivery.** `/audio/{lang}/{code}.webm` served statically with an immutable
-   cache header, plus a `manifest.json` of clip versions. The service worker
-   precaches the pack for the selected language only.
-3. **Playback.** `<audio>` with a tiny JS queue (intro → findings → action) and a
-   hard fallback chain: pack clip → `SpeechSynthesis` → written warning. A WASM
-   decoder (e.g. `wasm-audio-decoders`) is only needed for older WebViews that
-   cannot play Opus/WebM; it is not required for the pack itself, which is why
-   this stays a delivery problem rather than a compilation problem.
-4. **Why it matters.** It removes the device-dependency that currently makes the
-   read-aloud feature unreliable on the cheapest Android phones, and it is the
-   only way to guarantee the critical warning can be heard in a noisy shop.
-
-Still not recorded: no voice talent, no clips, no synthesiser model. The loader,
-manifest contract and playback tier now ship (see "Local audio pack" below), so
-the remaining work is content and clinical review, not plumbing.
-
-### New tests (14, in `tests/test_nextgen.py`)
-
-Public taxonomy feed, service-worker route + scope header + precache list +
-never-cache-POST assertion, batch basket shape and per-strip indexes, 4-strip cap
-(413), empty basket (422), per-upload validation (415), cross-strip duplicate
-detection, relay ticket round trip and three rejections, relay refusal when
-unconfigured and on a forged ticket, peer-to-peer forwarding with room teardown,
-and oversized-frame dropping. Total backend suite: **100 passed**.
-
-## Production hardening (Pass 19)
-
-### Container posture
-
-| Property | Value | Checked by |
-|---|---|---|
-| Base image | `python:3.12-slim` (Debian, glibc) | static audit |
-| Runtime user | `katha`, uid **10001**, `USER` after install, never reverted | `test_container_runs_as_an_unprivileged_user` |
-| Writable layer | none needed — RAM-only processing, no volume, no DB | design + live POST check |
-| Dependencies | 6 pins, all `==`, no range specifiers | `test_runtime_dependencies_are_exactly_pinned` |
-| Build context | `.env`, `.git`, `.venv`, `tests/`, `__pycache__`, `node_modules` excluded | `test_build_context_excludes_secrets_tests_and_the_venv` |
-| Secrets in layers | none: no `ENV`/`ARG`/`COPY` of `KATHA_VISION_API_KEY` or `KATHA_RELAY_SECRET` | `test_container_declares_a_healthcheck_and_no_baked_secrets` |
-| Healthcheck | `urllib` GET on `/health`, 30s interval, 3s timeout, 10s start period | same test |
-| Footprint | 26 packages installed from the pins; `.venv` is 63 MB, so the runtime layer is small next to the ~130 MB slim base | measured in this sandbox |
-
-**Why not alpine.** Alpine would cut roughly 100 MB, but this stack runs
-`uvicorn[standard]` (uvloop, httptools) and `pydantic-core`, all native. They do
-publish musllinux wheels, yet the optional OCR tier (`pytesseract` +
-`tesseract-ocr`) is significantly more work to package on musl, and a musl/glibc
-mismatch here fails at import time in production rather than in CI. The decision
-is therefore: **slim + non-root + no writable layer**, with alpine available as a
-follow-up only after the OCR tier is settled and a multi-arch build is in CI.
-
-**Not verified here:** `docker build` was not run — the sandbox has a Docker CLI
-but `/var/run/docker.sock` is root-only, so the daemon rejects this user. The
-image is audited statically (parsed by tests), not built.
-
-### Ingress: nginx and Cloudflare
-
-Two files carry the edge rules, and both are checked by tests so they cannot rot:
-
-* **`deploy/nginx.kathapulse.conf`** — TLS 1.2/1.3 termination, HSTS
-  (`max-age=63072000; includeSubDomains`), `server_tokens off`,
-  `client_max_body_size 7m` (just above the app's 6 MiB so the app's own 413 is
-  what a user sees), per-IP `limit_req` zones (30/min scans, 120/min reads) as a
-  token bucket, plus the in-app sliding window below where a bucket boundary is
-  not good enough,
-  `limit_conn`, `proxy_request_buffering off` for uploads (nothing is spooled to
-  an nginx temp file), and an explicit WebSocket upgrade block for `/ws/relay/`.
-* **`deploy/cloudflare-rules.md`** — Full (strict) TLS, Always Use HTTPS, HSTS,
-  WAF managed rules, Bot Fight Mode, rate-limiting rules for the scan, typed and
-  relay paths, cache rules that bypass every POST, `/sw.js` and `/ws/*`, and a
-  warning that **Under Attack Mode breaks the relay**.
-* **App-side occlusion.** `/docs`, `/redoc`, `/openapi.json` and
-  `/docs/oauth2-redirect` now return a `no-store` 404 unless
-  `KATHA_DOCS_ENABLED=1`. Three layers — Cloudflare, nginx, app — because the app
-  is the one that survives a proxy misconfiguration.
-
-### In-app sliding-window rate limiting (Pass 20)
-
-nginx's `limit_req` is a leaky bucket: it can admit a burst right after a
-boundary. `app/ratelimit.py` adds a true **sliding window** as a backstop, with
-the same 30 req/min default as the edge rule:
-
-| Property | Value |
+| Document | What it covers |
 |---|---|
-| Window | rolling 60s, pruned per admission (no fixed-bucket burst) |
-| Key | client IP from the socket; nothing else is recorded |
-| Storage | in-process `dict[str, deque[float]]` — RAM only, no file, no Redis |
-| Bound | 4096 clients max, coldest evicted, so address floods cannot grow it |
-| Response | `429` + `Retry-After` + `no-store`, no client identifier echoed |
-| Default | **off** (`KATHA_RATE_LIMIT_PER_MIN=0`): the edge owns the budget |
+| [`docs/SUBMISSION_OVERVIEW.md`](docs/SUBMISSION_OVERVIEW.md) | problem framing, verified file tree, full competitor matrix, privacy posture |
+| [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md) | test-backed clinical audit, translation coverage, §9 security controls, §10 DPDP / D&C / IT Act, §11 256-entry catalogue audit |
+| [`docs/NEURAVIZ_STAGE4_CHECKLIST.md`](docs/NEURAVIZ_STAGE4_CHECKLIST.md) | Stage 4 finalist alignment, capture runbook, demo script, pack build |
+| [`docs/STAGE4_UPLOAD_CHECKLIST.md`](docs/STAGE4_UPLOAD_CHECKLIST.md) | the manual steps: phone audio, optional video, key setup, the three uploads |
+| [`AUDIT_REPORT.md`](AUDIT_REPORT.md) | independent audit notes and per-pass scorecards |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | setup, test gates, data-change rules, security disclosure |
+| [`LICENSE`](LICENSE) | MIT |
 
-Enable it for a bare container or a hospital LAN install with no proxy:
+---
+
+## 15. Known limitations
+
+| Limitation | Consequence |
+|---|---|
+| **No live vision key here** | `/health` reports `vision_keys: 0`; photo scans return `manual_required`. The AI-reading path is implemented and unit-tested with stubbed providers, not demonstrated live. |
+| **Recall list is a 4-entry pilot** | The app says "recall list", never "government recall". MedicineWatch India is genuinely ahead on this axis. |
+| **Catalogue is 48 molecules / 48 brands / 256 names** | A miss asks the user to type the name; it never invents a drug. |
+| **Translations not clinically reviewed** | All strings exist in ml/hi/en and script assertions pass; native-speaker/pharmacist sign-off is outstanding. |
+| **Schedule H / H1 not checked** | The app flags duplication and interactions but does not say "prescription only". Required before pharmacy use. |
+| **No consent manager or DPIA** | DPDP alignment is a design posture, not a certification. |
+| **Audio not heard on a device** | Selection and fallback logic are tested; headless Chromium has no ml-IN/hi-IN voice, so playback needs a physical handset. |
+| **Control labels stay bilingual** | `LISTEN`/`STOP`/`SET`/`CANCEL` remain Malayalam + English in Hindi mode (cosmetic, frozen code). |
+| **Batch caveat renders in one language** | The API returns all three; the UI shows the selected one — hence three captures. |
+| **Not a medical device** | Screening aid only; every result carries a disclaimer and points to a pharmacist or doctor. |
+| **POSIX-only path resolution** | `app/main.py` derives `BASE_DIR` with `__file__.rsplit("/", 1)[0]`, so a native Windows import resolves `app/main.py/../static` and fails. Docker, CI and every documented deployment are Linux and unaffected; running the suites on Windows needs a forward-slash launcher (or the two-line fix, queued after the freeze). |
+
+---
+
+## 16. Contributing
+
+Contributions are welcome, with one hard rule: **a warning may never become harder to read or easier
+to get wrong.** Concretely — no feature may persist patient data server-side, and no model output may
+enter the decision path.
 
 ```bash
-KATHA_RATE_LIMIT_PER_MIN=30 ./scripts/serve.sh
+git checkout -b feat/short-description
+# make the change, then:
+./.venv/bin/pytest -o addopts="" -q
+cd tests/js && npm ci && for t in state retry exif-scrub audio-pack audiopack presets recall groundtruth reminders; do node "$t.test.mjs" || exit 1; done
 ```
 
-It is deliberately not a log: counters are timestamps per IP, discarded with the
-process, which keeps the zero-persistence posture of the scan path intact.
+Adding a medicine to the catalogue, adding a language, and reporting a vulnerability are each
+described in [`CONTRIBUTING.md`](CONTRIBUTING.md). Never commit `.env`, a real API key, or a patient
+photograph.
 
-### Local audio pack (Pass 21)
+---
 
-`static/js/audio-pack.js` + `static/audio/manifest.json` are the tier above the
-Web Speech API, for the phones that have no `ml-IN` / `hi-IN` voice at all.
+## 17. License
 
-The manifest ships **empty** (`"clips": {}`), and that is the point: `play()`
-answers `unavailable`, the caller falls through to the device voice, and then to
-the written warning. Speech behaviour today is byte-for-byte unchanged.
+Released under the [MIT License](LICENSE) © 2026 saviochackoxavier-tech.
 
-```json
-{"schema": 1, "version": "3", "voice": {"name": "...", "license": "..."},
- "clips": {"ml:DUPLICATE_SALT": "/static/audio/ml/DUPLICATE_SALT.webm"}}
-```
-
-Keys are `<language>:<finding.code>`, plus `<language>:intro` and
-`<language>:outro` for the speech frame. Every API call resolves a status
-instead of throwing, so the warning path can never die on audio:
-
-| Status | Meaning | Caller does |
-|---|---|---|
-| `played` | clip started | stop; audio is the channel |
-| `unavailable` | no clip for this key, or the pack failed to load | use `Speech.speak()` |
-| `blocked` | autoplay policy rejected it (no user gesture yet) | use `Speech.speak()` |
-| `unsupported` | no `Audio` constructor | use `Speech.speak()` |
-
-Manifest values are cleaned before use: anything that is not a non-empty string
-without `..` is dropped, so a tampered manifest cannot point at another origin.
-The service worker precaches the loader and the manifest as part of the
-`kathapulse-v3` shell.
-
-**WASM synthesiser (still a plan).** The clips can be recorded by a human, or
-synthesised on-device by a WASM TTS engine (Piper or sherpa-onnx with a
-Malayalam/Hindi voice bundle, roughly 20–60 MB, cached after first use). WASM is
-the optional third route, not the default: recorded clips win on quality and
-size for 30 fixed phrases, and a 40 MB model download is a real cost on a ₹8k
-phone. The integration point is already correct — a synthesiser only has to fill
-the manifest.
-
-**Wiring (Pass 22).** `speakCurrent()` now tries the pack first as tier 0:
-`AudioPack.playScript(language, codes)` plays `intro → each finding code (max 4)
-→ outro`, sequenced on `ended` with a 15s per-clip timeout. It is
-**all-or-nothing**: if any clip in the chain is missing, nothing plays and the
-device-voice path runs exactly as before. The pack is skipped entirely while
-`clips` is empty, so today's behaviour is unchanged, and Stop halts clips as well
-as speech.
-
-To go live: record/synthesise the 31 finding clips per language, get clinical
-sign-off on the wording, drop the `.webm` files under `static/audio/<lang>/`,
-list them in the manifest, and bump both `version` and `CACHE_VERSION`.
-
-### Multilingual architecture
-
-`app/languages.py` is a registry, not a rewrite: one `LanguageSpec` row per
-language with code, native name, script, family, TTS locale, rollout flag and a
-concrete note.
-
-| Code | Language | Script | Family | TTS locale | Status |
-|---|---|---|---|---|---|
-| ml | Malayalam | Malayalam | Dravidian | ml-IN | **live** |
-| hi | Hindi | Devanagari | Indo-Aryan | hi-IN | **live** |
-| en | English | Latin | Germanic | en-IN | **live** |
-| ta | Tamil | Tamil | Dravidian | ta-IN | planned |
-| te | Telugu | Telugu | Dravidian | te-IN | planned |
-| kn | Kannada | Kannada | Dravidian | kn-IN | planned |
-| bn | Bengali | Bengali | Indo-Aryan | bn-IN | planned |
-| mr | Marathi | Devanagari | Indo-Aryan | mr-IN | planned |
-| gu | Gujarati | Gujarati | Indo-Aryan | gu-IN | planned |
-
-Coverage today: **31 translation keys, 100% for ml/hi/en** (`i18n.coverage()`),
-asserted by tests so a missing string cannot ship silently. New in this pass:
-`i18n.t()` falls back to English for an unknown or untranslated code instead of
-raising, so a partial Tamil rollout still produces a safe warning rather than a
-500.
-
-To add a language: (1) flip its registry row to `enabled=True`; (2) add the code
-to the `Language` enum; (3) add a field to `LanguageText`; (4) translate the 31
-keys in `app/i18n.py`; (5) add the script's font to the stack in `styles.css`
-(`"Noto Sans Tamil"`, `"Noto Sans Kannada"`, …); (6) test at 320px — Telugu and
-Tamil transliterations of drug names are longer than Malayalam; (7) confirm the
-device TTS voice for that locale, because the spoken warning degrades to text
-without it until the WASM audio pack exists.
-
-### Audio tier wiring (Pass 24)
-
-`tests/js/audiopack.test.mjs` mounts the real page in jsdom and asserts what
-`app.js` does with the pack, with clips present and with clips missing. It found
-two defects that are now fixed:
-
-* **tier 0 was dead on a cold page.** `tryAudioPack()` skipped the pack while
-  `status().clips` was still 0, and nothing had ever loaded the manifest, so
-  shipped clips could never play. The manifest is now warmed at boot and only an
-  *already-loaded empty* pack is skipped.
-* **no STOP during clip playback.** The pack branch returned before showing the
-  STOP button, so a long warning could not be interrupted. STOP is now offered
-  for the duration of a clip script.
-
-Cache name bumped to `kathapulse-v5` so phones pick up the new `app.js`; the
-service-worker test now pins a version floor instead of a literal number.
-
-Pass 25 extended the suite to all three languages and found a third defect:
-English had no flat speech field, so switching an already-scanned result to
-English read the **Malayalam** `speech.text` back in an English voice. The API
-now returns `safety_message_en` next to `safety_message_ml`/`_hi`, and
-`spokenTextFor()` prefers it, so a language switch speaks the right language
-without re-scanning.
-
-## Final verification (Pass 23)
-
-What was actually executed on the running `0.0.0.0:3004` process, and what it
-proved.
-
-| Check | Method | Result |
-|---|---|---|
-| Vision HTTP tier | `POST /verify-strip` with `samples/strip-dolo.jpg` against a Groq-shaped endpoint | `extraction_status: ok`, `extraction_source: vision_llm`, `Telma-H 40 mg/12.5 mg → Telmisartan 40.0 mg + Hydrochlorothiazide 12.5 mg` |
-| Batch tier | `POST /verify-strips/batch`, three strips | `strip_count: 3`, combined verdict `critical`, 416 KB in RAM |
-| Malayalam output | same scan, `language=ml` | full `safety_message_ml`, `വായിക്കുക` read-aloud block |
-| Hindi output | `language=hi` | `speaking: true` from `speechSynthesis` (a `hi-IN` voice exists here) |
-| Zero disk writes | `find /tmp . -newer <marker>` plus `/proc/<pid>/fd` | no new files, no deleted-but-open fds, no `tempfile` anywhere in `app/` |
-| Regressions | `pytest` + five browser suites | `132 passed`; state 18/18, retry 4/4, EXIF 15/15, presets 9/9, audio-pack 10/10 |
-| Browser console | DevTools protocol, after scan + speech | empty; only the expected 200s |
-
-**The one thing this pass could not prove:** the deployment's
-`KATHA_VISION_API_KEY` was empty at verification time (`.env` had a bare
-`KATHA_VISION_API_KEY=` and `/health` reported `vision_model: null`), so no
-request reached `api.groq.com`. The tier was exercised over real HTTP against
-`scripts/_stub_vision.py`, which asserts the request contract (bearer header,
-`messages` content list, `image_url` data URL) and answers in Groq's exact
-response shape. Groq's model quality on a real strip photo therefore remains
-unverified. Set the key in Settings → Project settings → Secrets, restart, and
-`./.venv/bin/python scripts/check_vision.py` becomes the live judge-facing
-proof.
-
-**Cosmetic finding:** with the warning language switched to Hindi, the result
-screen renders correctly in Hindi but the LISTEN/STOP button labels stay
-bilingual Malayalam/English (they are fixed chrome, not translated per
-language). Speech itself follows the selected language.
-
-## Known limitations
-
-* Without a vision key or local tesseract, photo scans fall back to manual entry
-  (by design — see above). The vision tier has been verified end-to-end against
-  a local stand-in but not yet against a live GroqCloud key (Pass 23).
-* Malayalam/Hindi TTS depends on the device having that voice installed; the UI
-  detects the missing voice and says so instead of reading English aloud.
-* The taxonomy is a pilot subset, not a licensed drug database. Replace
-  `app/taxonomy.py` with a CDSCO-style feed before any clinical deployment.
-* The knowledge base is a **curated pilot catalogue** (48 Kerala shelf products,
-  256 indexed names), not a licensed formulary. Every molecule is validated
-  against the taxonomy, but the cautions and age bands need a pharmacist's
-  review before a pilot depends on them.
-* The recall feed is **four curated pilot notices**, not a live regulator feed;
-  every `ref` is a local trace label. The matching engine is finished and
-tested, the data is not — replace `app/recall.py:RECALLS` before a pilot relies
-  on it.
-* This is a screening aid. It is not a diagnosis and not a substitute for a
-  pharmacist.
+> **Medical disclaimer.** KathaPulse AI is an educational screening aid. It is not a medical device,
+> not a substitute for a licensed pharmacist or doctor, and it does not provide a diagnosis or a
+> prescription. Always confirm with a pharmacist or physician before taking, stopping or changing a
+> medicine.

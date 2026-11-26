@@ -1,6 +1,7 @@
 # KathaPulse AI — Submission Overview
 
-**Build:** `v1.6.1` · **documented commit:** `4fe14cf` · **branch:** `freebuff/634aa3b468f03b91c44ddefa`
+**Build:** `v1.6.1` — application code at `5aeb05f`, unchanged since
+**docs/tooling:** Pass 37 (26 November 2026) · **branch:** `main`
 **Document date:** 25 November 2026
 **Challenge:** NeuraViz AI Challenge 2026–27, **Stage 4 — Final Stage**
 **Final-stage deadline:** **10 December 2026** (confirm on the participant portal)
@@ -70,8 +71,9 @@ KathaPulse addresses all five in one flow, on a low-end Android phone, with
 
 ## 3. What the build actually contains (verified file tree)
 
-Only files that exist at `4fe14cf` are listed. Counts are from this build; the
-application code is unchanged since `5aeb05f`.
+Only files that exist in this build are listed. Counts are from this build; the
+application code is unchanged since `5aeb05f` — Pass 34–36 added documentation,
+audit scripts and the submission pack only.
 
 | Area | Files | Reality |
 |---|---|---|
@@ -85,6 +87,7 @@ application code is unchanged since `5aeb05f`.
 | Client logic | `static/js/app.js`, `state.js`, `capture.js`, `speech.js`, `audio-pack.js`, `reminders.js` | State machine, EXIF scrub, tri-lingual speech, local audio pack, dose clock |
 | Tests | 14 backend files (348 checks), 9 Node suites (119 checks) | See `docs/VALIDATION_REPORT.md` |
 | CI | `.github/workflows/ci.yml` | Backend + frontend jobs; locally executed, not yet run on GitHub |
+| Audit & packaging | `scripts/audit_knowledge_base.py`, `scripts/build_stage4_pack.py`, `scripts/make_submission_archive.sh` | 256-entry structural audit (`exit 0`), pack builder, secret-free source ZIP |
 
 ---
 
@@ -147,6 +150,27 @@ Not "AI scans medicine". That is common. The defensible claim is the
 **DPDP Act 2023 alignment is a design posture, not a certification.** No consent
 manager, data-fiduciary registration or audit has been performed.
 
+### 5.1 Indian legal and regulatory boundaries (summary)
+
+The full, code-referenced position is `docs/VALIDATION_REPORT.md` §10. In short:
+
+- **DPDP Act 2023** — purpose limitation by construction (processing only on an
+explicit capture or typed name), data minimisation (1600 px, 6 MiB, ≤10
+medicines, ≤5 strips), storage limitation (RAM only, `no-store`, no
+`localStorage`), and **zero data egress while no vision key is configured**. Not
+done: consent notice/record, grievance officer, DPIA, and — if a vision key is
+ever enabled — a transfer notice for the image that would then go to that
+provider.
+- **Drugs and Cosmetics Act 1940 / Rules 1945, CDSCO** — not a drug, not a
+medical device, not CDSCO-certified, no diagnostic claim; the recall list is a
+four-entry **pilot**, never described as a government feed; the app never tells a
+patient to start, stop or change a dose. **Gap:** Schedule H/H1
+(prescription-only) status is not checked — required before any pharmacy use.
+- **IT Act 2000 / SPDI baseline** — no server-side store of sensitive health
+data, HTTPS at the proxy, no interception or analytics, standard security headers
+and input allowlists. Not claimed: ISO 27001, CERT-In audit, incident-response
+runbook, HSTS header (owned by the edge).
+
 ---
 
 ## 6. Limitations a reviewer should know before judging
@@ -160,6 +184,9 @@ manager, data-fiduciary registration or audit has been performed.
 | Not a medical device | Screening aid only; every result carries a disclaimer. |
 | CI has not run on GitHub | The workflow runs locally; no push was authorised. |
 | Audio not heard on a real device | The selection/fallback logic is tested; headless Chromium has no ml-IN/hi-IN voice. |
+| Static control labels stay bilingual Malayalam + English | Cosmetic: `LISTEN`/`STOP`/`SET`/`CANCEL` markup labels do not follow the selector, though every warning and script does. Fix queued after the freeze. |
+| Batch caveat renders in the selected language only | The API returns `en`/`ml`/`hi`; the UI shows the active one. Captured in all three for the pack. |
+| Schedule H/H1 status is not checked | The app flags duplication and interactions but does not say "prescription only". Required before pharmacy deployment. |
 
 ---
 
@@ -169,6 +196,11 @@ manager, data-fiduciary registration or audit has been performed.
   offline-error audit.
 - `docs/NEURAVIZ_STAGE4_CHECKLIST.md` — Stage 4 finalist alignment, live-vision
   status, physical-phone protocol, four-screenshot capture runbook, voiceless
-  demo script, archive command.
+demo script, archive command.
+- `docs/STAGE4_UPLOAD_CHECKLIST.md` — the manual steps: phone checks, optional
+  video, key setup, the three files to upload and the statements to include.
 - `README.md` — architecture, API, test commands, pass-by-pass history.
+- `CONTRIBUTING.md` — setup, test gates, drug-data rules, security disclosure.
+- `LICENSE` — MIT, with the medical-device / CDSCO boundary stated in the file.
 - `AUDIT_REPORT.md` — independent audit notes and per-pass scorecards.
+- Repository: <https://github.com/saviochackoxavier-tech/kathapulse-ai> (branch `main`).

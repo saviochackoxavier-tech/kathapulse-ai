@@ -1,0 +1,34 @@
+MIT License
+
+Copyright (c) 2026 saviochackoxavier-tech
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+Medical disclaimer
+
+KathaPulse AI is an educational medicine-safety aid and a prototype submitted to
+the NeuraViz AI Challenge 2026-27. It is not a medical device, has not been
+cleared or certified by the Central Drugs Standard Control Organisation (CDSCO)
+or any other regulator, and does not provide diagnosis, treatment or prescribing
+advice. The bundled drug taxonomy and recall notices are curated pilot data for
+demonstration, not a licensed formulary or an official pharmacovigilance feed.
+Always confirm with a licensed pharmacist or physician before taking, stopping
+or changing any medicine.
