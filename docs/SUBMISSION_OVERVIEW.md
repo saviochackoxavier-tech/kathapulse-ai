@@ -201,6 +201,7 @@ demo script, archive command.
   video, key setup, the three files to upload and the statements to include.
 - `README.md` — architecture, API, test commands, pass-by-pass history.
 - `CONTRIBUTING.md` — setup, test gates, drug-data rules, security disclosure.
-- `LICENSE` — MIT, with the medical-device / CDSCO boundary stated in the file.
+- `LICENSE` — MIT.
+- `DISCLAIMER.md` — the medical-device / CDSCO boundary, data-handling position and evidence limits.
 - `AUDIT_REPORT.md` — independent audit notes and per-pass scorecards.
 - Repository: <https://github.com/saviochackoxavier-tech/kathapulse-ai> (branch `main`).

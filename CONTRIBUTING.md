@@ -116,4 +116,5 @@ service-worker path that caches a scan.
 ## License
 
 By contributing you agree that your contribution is licensed under the repository's
-[MIT License](LICENSE), including the medical disclaimer it carries.
+[MIT License](LICENSE). The medical-device boundary and data-handling position you must not
+contradict are in [`DISCLAIMER.md`](DISCLAIMER.md).

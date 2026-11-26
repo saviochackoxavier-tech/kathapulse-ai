@@ -19,16 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-Medical disclaimer
-
-KathaPulse AI is an educational medicine-safety aid and a prototype submitted to
-the NeuraViz AI Challenge 2026-27. It is not a medical device, has not been
-cleared or certified by the Central Drugs Standard Control Organisation (CDSCO)
-or any other regulator, and does not provide diagnosis, treatment or prescribing
-advice. The bundled drug taxonomy and recall notices are curated pilot data for
-demonstration, not a licensed formulary or an official pharmacovigilance feed.
-Always confirm with a licensed pharmacist or physician before taking, stopping
-or changing any medicine.

@@ -593,6 +593,7 @@ kathapulse-ai/
 | [`AUDIT_REPORT.md`](AUDIT_REPORT.md) | independent audit notes and per-pass scorecards |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | setup, test gates, data-change rules, security disclosure |
 | [`LICENSE`](LICENSE) | MIT |
+| [`DISCLAIMER.md`](DISCLAIMER.md) | medical-device boundary, data-handling position, evidence limits |
 
 ---
 
@@ -635,7 +636,8 @@ photograph.
 
 ## 17. License
 
-Released under the [MIT License](LICENSE) © 2026 saviochackoxavier-tech.
+Released under the [MIT License](LICENSE) © 2026 saviochackoxavier-tech. The medical-device
+boundary, data-handling position and evidence limits are stated in [`DISCLAIMER.md`](DISCLAIMER.md).
 
 > **Medical disclaimer.** KathaPulse AI is an educational screening aid. It is not a medical device,
 > not a substitute for a licensed pharmacist or doctor, and it does not provide a diagnosis or a
