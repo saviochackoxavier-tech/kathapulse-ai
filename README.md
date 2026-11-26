@@ -349,7 +349,7 @@ of truth and would go stale. Each placeholder below names the exact file.
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│  EVIDENCE 01 · docs/evidence/01-evidence-card-320.png        │
+│  EVIDENCE 01 · evidence/01-evidence-card-320.png             │
 │  viewport 320 px · full-page capture 320 × 3,169             │
 │  source: live demo preset (no vision key required)           │
 └──────────────────────────────────────────────────────────────┘
@@ -369,8 +369,8 @@ instead of trusting an opaque confidence percentage.
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│  EVIDENCE 02 · docs/evidence/02-recapture-simulated.png      │
-│                 docs/evidence/02-low-rejected-simulated.png  │
+│  EVIDENCE 02 · evidence/02-recapture-simulated.png           │
+│                 evidence/02-low-rejected-simulated.png       │
 │  source: response-level simulation — banner reads             │
 │          "SIMULATED CONFIDENCE RESPONSE"                     │
 └──────────────────────────────────────────────────────────────┘
@@ -391,9 +391,9 @@ No capture is presented as a live model read.
 
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│  EVIDENCE 03 · docs/evidence/03-recall-banner-320.png        │
-│                 docs/evidence/03-recall-banner-ml.png        │
-│                 docs/evidence/03-recall-banner-hi.png        │
+│  EVIDENCE 03 · evidence/03-recall-banner-320.png             │
+│                 evidence/03-recall-banner-ml.png             │
+│                 evidence/03-recall-banner-hi.png             │
 │  source: live batch preset (GM2407A, 09/2026)                │
 └──────────────────────────────────────────────────────────────┘
 ```
