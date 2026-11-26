@@ -340,7 +340,9 @@ The full, code-referenced audit — including every gap — is in
 ## 8. Visual evidence gallery
 
 Captures come from the live build on a 320 px and 360 px viewport
-(`scrollWidth === clientWidth` at both widths, so no horizontal overflow). The PNGs are
+(`scrollWidth === clientWidth` at both widths, so no horizontal overflow). Regenerate them against
+a running app with `bun scripts/capture_evidence.mjs` (headless Chrome over CDP, one crop per
+result panel). The PNGs are
 **git-ignored by design** and ship inside the Stage 4 upload pack
 (`artifacts/stage4_submission/evidence/`), because a screenshot folder in git is never the source
 of truth and would go stale. Each placeholder below names the exact file.
@@ -350,14 +352,14 @@ of truth and would go stale. Each placeholder below names the exact file.
 ```text
 ┌──────────────────────────────────────────────────────────────┐
 │  EVIDENCE 01 · evidence/01-evidence-card-320.png             │
-│  viewport 320 px · full-page capture 320 × 3,169             │
+│  viewport 320 px · result-panel capture 320 × 1,822          │
 │  source: live demo preset (no vision key required)           │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 **Walkthrough.** After a scan resolves, the card shows one row per strip: **medicine name**
-(`Dolo 650`), **strength** (`650 mg`, read from the foil because the number is part of the brand),
-and **active ingredient** (`paracetamol`), each with its own status chip. The provenance line names
+(`Glycomet GP`), **strength** (`500 mg` metformin + `1 mg` glimepiride, read from the foil because
+the numbers are part of the brand), and **active ingredient**, each with its own status chip. The provenance line names
 the database that confirmed the molecule (`ground_truth` or `taxonomy`) and the catalogue review
 date **2026-11-25**. A strength that came from a molecule default shows **Unverified** in amber —
 the app distinguishes *what the camera read* from *what the database knows*.

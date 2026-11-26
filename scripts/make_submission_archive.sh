@@ -16,15 +16,18 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+#: REV pins the archive to a commit (default HEAD); TAG names the file. Passing
+#: both lets the submission archive carry the release name it documents.
+REV="${REV:-HEAD}"
 OUT_DIR="${OUT_DIR:-$ROOT/artifacts}"
-TAG="$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo snapshot)"
+TAG="${TAG:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || echo snapshot)}"
 NAME="kathapulse-ai-$TAG"
 ZIP="$OUT_DIR/$NAME.zip"
 
 mkdir -p "$OUT_DIR"
 rm -f "$ZIP"
 
-git -C "$ROOT" archive --format=zip --prefix="$NAME/" -o "$ZIP" HEAD
+git -C "$ROOT" archive --format=zip --prefix="$NAME/" -o "$ZIP" "$REV"
 
 if ! command -v unzip >/dev/null 2>&1; then
   echo "[archive] unzip is required to verify the archive" >&2
@@ -59,7 +62,7 @@ fi
 FILES="$(printf '%s\n' "$LIST" | grep -cEv '/$' || true)"
 echo "[archive] clean: $ZIP"
 echo "[archive] files: $FILES"
-echo "[archive] commit: $(git -C "$ROOT" rev-parse --short HEAD) ($TAG)"
+echo "[archive] commit: $(git -C "$ROOT" rev-parse --short "$REV") ($TAG)"
 if command -v sha256sum >/dev/null 2>&1; then
   sha256sum "$ZIP"
 else

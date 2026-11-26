@@ -411,7 +411,8 @@ The builder writes `artifacts/stage4_submission/`:
 
 | File | Purpose |
 |---|---|
-| `KathaPulse-AI-Stage4-Report.pdf` | Final report: overview + validation report + evidence appendix |
+| `KathaPulse_AI_Stage4_Technical_Report.pdf` | Final report, 21 pages: overview + validation report + evidence appendix (36 capture slices) |
+| `KathaPulse_AI_Stage4_Technical_Report.docx` | The same report as an editable DOCX for the portal (22 tables, 36 pictures) |
 | `KathaPulse-AI-Stage4-Pitch.pdf` | 10 landscape slides built from §3 and the captures |
 | `KathaPulse-AI-Stage4-Summary.pdf` | The one-page summary (§2), paste-ready |
 | `KathaPulse-AI-Stage4-*.md` / `-Pitch.html` | Text sources for editing without a PDF tool |
@@ -420,9 +421,10 @@ The builder writes `artifacts/stage4_submission/`:
 | `kathapulse-ai-*.zip` | The clean source archive |
 | `SHA256SUMS.txt` | SHA-256 of every file in the pack |
 
-The HTML is self-contained (images are embedded), so the PDFs are rendered by
-Chromium `page.pdf` — A4 portrait for the report and summary, A4 landscape for
-the pitch. Any browser's "Print → Save as PDF" produces the same document.
+The HTML is self-contained (images are embedded). The PDFs are built with ReportLab
+(A4 portrait for the report and summary, A4 landscape for the pitch) and the report's
+DOCX twin with python-docx, so a browser "Print → Save as PDF" is a convenience,
+never the shipped file.
 
 ### Archive checklist
 

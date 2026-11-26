@@ -73,7 +73,7 @@ Upload at most **three** files plus the paste-ready summary:
 | Portal field | File to upload |
 |---|---|
 | Final summary | `KathaPulse-AI-Stage4-Summary.pdf` |
-| Final report | `KathaPulse-AI-Stage4-Report.pdf` |
+| Final report | `KathaPulse_AI_Stage4_Technical_Report.pdf` (upload the `.docx` twin instead if the portal prefers Word) |
 | Presentation | `KathaPulse-AI-Stage4-Pitch.pdf` |
 | Optional demo link | your unlisted video URL, or the live preview URL |
 | Repository / supporting | `kathapulse-ai-v1.6.1-*.zip` **only if** the portal accepts a 4th file or a link field |

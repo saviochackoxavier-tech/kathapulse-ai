@@ -77,6 +77,17 @@ try:  # PDF rendering is optional so the HTML step works in a bare environment
 except Exception:  # pragma: no cover - only when ReportLab is absent
     HAVE_PDF = False
 
+try:  # DOCX is the portal-friendly companion to the PDF
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Cm as DocxCm
+    from docx.shared import Pt as DocxPt
+    from docx.shared import RGBColor as DocxColor
+
+    HAVE_DOCX = True
+except Exception:  # pragma: no cover - only when python-docx is absent
+    HAVE_DOCX = False
+
 INDIC_REGISTERED: list[str] = []
 if HAVE_PDF:
     from reportlab.pdfbase import pdfmetrics
@@ -130,7 +141,15 @@ def blocks(md: str) -> list[dict]:
     lines = md.splitlines()
     out: list[dict] = []
     i = 0
+    # A malformed construct must fail loudly instead of spinning; every branch
+    # below advances `i`, so more iterations than lines means a parser bug.
+    guard = 0
     while i < len(lines):
+        guard += 1
+        if guard > 4 * (len(lines) + 1):
+            raise RuntimeError(
+                f"markdown parser stalled at line {i + 1}: {lines[i][:160]!r}"
+            )
         raw = lines[i]
         s = raw.strip()
 
@@ -174,7 +193,14 @@ def blocks(md: str) -> list[dict]:
             continue
 
         marker = r"^\s*[-*]\s+" if re.match(r"^\s*[-*]\s+", raw) else None
-        numbered = None if marker else r"^\s*\d+[.)]\s+"
+        # `numbered` must be None unless the line really is a numbered item:
+        # a bare pattern string is truthy and would send every ordinary
+        # paragraph down the list branch, appending nothing and never advancing.
+        numbered = (
+            None
+            if marker
+            else (r"^\s*\d+[.)]\s+" if re.match(r"^\s*\d+[.)]\s+", raw) else None)
+        )
         if marker or numbered:
             pattern = marker or numbered
             items = []
@@ -529,6 +555,34 @@ def _styles():
     }
 
 
+def slice_bounds(image, columns: int, window: int = 70) -> list[tuple[int, int]]:
+    """Column cuts snapped to the quietest scanline, so no row of text is split.
+
+    A fixed `height / columns` cut lands mid-sentence often enough to look like a
+    rendering fault; searching for the flattest row nearby keeps every slice
+    boundary in the gap between two cards.
+    """
+    from PIL import ImageStat
+
+    width, height = image.size
+    span = height / columns
+    cuts = [0]
+    for index in range(1, columns):
+        target = int(index * span)
+        low, high = max(1, target - window), min(height - 1, target + window)
+        best, best_score = target, None
+        for y in range(low, high):
+            band = image.crop((0, y, width, y + 1)).convert("L")
+            score = ImageStat.Stat(band).stddev[0]
+            if best_score is None or score < best_score:
+                best, best_score = y, score
+        if best <= cuts[-1]:
+            best = cuts[-1] + 1
+        cuts.append(best)
+    cuts.append(height)
+    return [(cuts[i], cuts[i + 1]) for i in range(columns)]
+
+
 def sliced_image(path: Path, max_h_mm: float, max_w_mm: float):
     """A tall phone capture as side-by-side slices that fit on one page.
 
@@ -548,9 +602,7 @@ def sliced_image(path: Path, max_h_mm: float, max_w_mm: float):
     height_mm = width_mm * slice_ratio
     tmpdir = Path(tempfile.mkdtemp(prefix="katha-slices-"))
     images = []
-    for index in range(cols):
-        top = int(index * slice_h)
-        bottom = h if index == cols - 1 else int((index + 1) * slice_h)
+    for index, (top, bottom) in enumerate(slice_bounds(im, cols)):
         piece = tmpdir / f"{index}.png"
         im.crop((0, top, w, bottom)).save(piece)
         images.append(Image(str(piece), width=width_mm * mm, height=height_mm * mm))
@@ -671,6 +723,39 @@ def doc_template(path: Path, pagesize=A4, margins=(15, 17, 15, 16), background: 
     return doc
 
 
+#: The nine Stage 4 captures in appendix order: (file, walkthrough caption).
+#: One list feeds the HTML, the PDF and the DOCX, so the three cannot drift.
+EVIDENCE_CAPTIONS: list[tuple[str, str]] = [
+    ("01-evidence-card-320.png",
+     "(a) Successful scan, English, 320 px: verdict, identification evidence (name / strength / "
+     "active ingredient), provenance “Kerala ground-truth catalogue · verified 2026-11-25”, "
+     "screening disclaimer and the RAM-only proof line."),
+    ("01-evidence-card-360.png",
+     "(a) The same evidence card at 360 px: the layout reflows with no horizontal overflow "
+     "(scrollWidth == clientWidth) and the card stays readable one-handed."),
+    ("02-recapture-simulated.png",
+     "(b) Medium confidence (simulated, and labelled in the capture): amber “Retake a clearer "
+     "photo” card, verdict held at “Could not verify”, all three evidence fields Unverified, "
+     "and the retake request in the read-aloud panel."),
+    ("02-low-rejected-simulated.png",
+     "(b) Low confidence (simulated, and labelled): the read is refused before any match, the copy "
+     "says no medicine could be identified, and the manual-entry card above the result opens for "
+     "batch / expiry / age."),
+    ("03-recall-banner-320.png",
+     "(c) Glycomet 500, batch GM2407A, expiry 09/2026: crimson recall + expiry banner above the "
+     "verdict, with the pharmacovigilance caveat (English)."),
+    ("03-recall-banner-ml.png", "(c) The same banner and caveat in Malayalam."),
+    ("03-recall-banner-hi.png", "(c) The same banner and caveat in Hindi."),
+    ("04-voice-reminder-ml.png",
+     "(d) Malayalam: LISTEN control, the voice-unavailable fallback notice this browser really shows "
+     "(no ml-IN voice is installed), the full read-aloud script, and the live 1-0-1 reminder "
+     "counting down to the next dose."),
+    ("04-voice-reminder-hi.png",
+     "(d) Hindi: the same controls, script and running reminder. This browser does carry a hi-IN "
+     "voice, so no fallback notice appears; the Malayalam capture shows the no-voice path."),
+]
+
+
 def render_report_pdf(path: Path, overview_md: str, validation_md: str) -> None:
     st = _styles()
     doc = doc_template(path)
@@ -715,24 +800,13 @@ def render_report_pdf(path: Path, overview_md: str, validation_md: str) -> None:
     flow += blocks_to_flow(blocks(validation_md), st, width)
 
     flow.append(PageBreak())
-    flow.append(Paragraph("Appendix A — Visual evidence (Pass 36 captures)", st["h1"]))
+    flow.append(Paragraph("Appendix A — Visual evidence (320 px / 360 px captures)", st["h1"]))
     flow.append(Paragraph(
         "Captures (b) are labelled <b>simulated confidence response</b>: this environment has no vision "
         "key (vision_keys: 0), so the confidence gate was driven by an injected response while the UI "
         "path itself is the real client code. Captures (a), (c) and (d) are deterministic presets or "
         "live API responses.", st["quote"]))
-    captions = [
-        ("01-evidence-card-320.png", "(a) Successful scan, English, 320 px: verdict, identification evidence (name / strength / active ingredient), provenance “Kerala ground-truth catalogue · verified 2026-11-25”, screening disclaimer and the RAM-only proof line."),
-        ("01-evidence-card-360.png", "(a) The same evidence card at 360 px: scrollWidth == clientWidth == 360, no horizontal overflow."),
-        ("02-recapture-simulated.png", "(b) Medium confidence → amber “Retake a clearer photo” card, verdict held at “Could not verify”, all three evidence fields Unverified. Response labelled simulated."),
-        ("02-low-rejected-simulated.png", "(b) Low confidence → the scan is rejected, the manual-entry card opens with batch/expiry/age fields, evidence stays Unverified. Response labelled simulated."),
-        ("03-recall-banner-320.png", "(c) Glycomet 500, batch GM2407A, expiry 09/2026: crimson recall + expiry banner above the verdict, with the pharmacovigilance caveat (English)."),
-        ("03-recall-banner-ml.png", "(c) The same banner and caveat in Malayalam."),
-        ("03-recall-banner-hi.png", "(c) The same banner and caveat in Hindi."),
-        ("04-voice-reminder-ml.png", "(d) Malayalam: LISTEN control, the voice-unavailable fallback notice headless Chromium really shows, the full read-aloud script, and an active 1-0-1 reminder banner counting down to 08:00."),
-        ("04-voice-reminder-hi.png", "(d) Hindi: same controls and active reminder, re-rendered from the same in-memory plan."),
-    ]
-    for name, caption in captions:
+    for name, caption in EVIDENCE_CAPTIONS:
         src = EVIDENCE / name
         if not src.exists():
             flow.append(Paragraph(f"[missing evidence file: {html.escape(name)}]", st["p"]))
@@ -836,6 +910,190 @@ def render_pitch_pdf(path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: Inline Markdown recognised by the DOCX serialiser.
+DOCX_TOKENS = re.compile(
+    r"\*\*([^*]+)\*\*|(?<![\w*])\*([^*\n]+)\*(?![\w*])|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)"
+)
+
+
+def _docx_inline(paragraph, text: str) -> None:
+    """Write one Markdown line into a DOCX paragraph, keeping bold/italic/code."""
+    position = 0
+    for match in DOCX_TOKENS.finditer(text):
+        if match.start() > position:
+            paragraph.add_run(text[position:match.start()])
+        bold, italic, code, label = (
+            match.group(1), match.group(2), match.group(3), match.group(4)
+        )
+        if bold:
+            paragraph.add_run(bold).bold = True
+        elif italic:
+            paragraph.add_run(italic).italic = True
+        elif code:
+            run = paragraph.add_run(code)
+            run.font.name = "Consolas"
+            run.font.size = DocxPt(9)
+        else:
+            paragraph.add_run(label)
+        position = match.end()
+    if position < len(text):
+        paragraph.add_run(text[position:])
+
+
+def _docx_slices(path: Path, max_ratio: float = 2.2) -> list[Path]:
+    """Cut a tall phone capture into column slices that fit a portrait page."""
+    from PIL import Image as PILImage
+
+    image = PILImage.open(path)
+    width, height = image.size
+    columns = max(1, math.ceil((height / width) / max_ratio))
+    slice_h = height / columns
+    directory = Path(tempfile.mkdtemp(prefix="katha-docx-"))
+    pieces: list[Path] = []
+    for index, (top, bottom) in enumerate(slice_bounds(image, columns)):
+        piece = directory / f"{path.stem}-{index}.png"
+        image.crop((0, top, width, bottom)).save(piece)
+        pieces.append(piece)
+    return pieces
+
+
+def render_report_docx(path: Path, overview_md: str, validation_md: str) -> None:
+    """The same report as the PDF, as an editable DOCX for the portal."""
+    document = Document()
+    section = document.sections[0]
+    section.left_margin = section.right_margin = DocxCm(2.0)
+    section.top_margin = section.bottom_margin = DocxCm(1.8)
+    normal = document.styles["Normal"]
+    normal.font.name = "Calibri"
+    normal.font.size = DocxPt(10.5)
+    normal.paragraph_format.space_after = DocxPt(6)
+
+    heading = document.add_paragraph()
+    heading_run = heading.add_run("KathaPulse AI — Stage 4 Final Report")
+    heading_run.bold = True
+    heading_run.font.size = DocxPt(24)
+    heading_run.font.color.rgb = DocxColor(0x0A, 0x2A, 0x1E)
+    tagline = document.add_paragraph()
+    tagline_run = tagline.add_run("Understand Your Medicine. Protect Your Health.")
+    tagline_run.italic = True
+    tagline_run.font.size = DocxPt(12)
+
+    meta = [
+        ("Build", BUILD),
+        ("Documents", "Submission overview + clinical/translation/offline validation"),
+        ("Challenge", "NeuraViz AI Challenge 2026–27 — Stage 4 (Final Stage)"),
+        ("Deadline", "10 December 2026 (confirm on the participant portal)"),
+        ("Date", DATE),
+        ("Backend checks", "348 passing"),
+        ("Frontend checks", "119 passing"),
+        ("Knowledge base", "48 brands · 256 indexed names · verified 2026-11-25"),
+    ]
+    table = document.add_table(rows=0, cols=2)
+    table.style = "Table Grid"
+    for key, value in meta:
+        cells = table.add_row().cells
+        cells[0].text = ""
+        run = cells[0].paragraphs[0].add_run(key)
+        run.bold = True
+        cells[1].text = value
+
+    document.add_paragraph()
+    note = document.add_paragraph()
+    note.add_run(
+        "Prepared for the NeuraViz AI Challenge 2026–27, Stage 4 (Final Stage). Every figure in "
+        "this document is reproducible from the commit named in the pack manifest; where a check "
+        "could not run in this environment, the document says so instead of estimating it."
+    ).italic = True
+
+    document.add_page_break()
+    document.add_heading("Contents", level=1)
+    headings = [
+        re.sub(r"^\d+\.\s*", "", block["text"])
+        for block in blocks(overview_md + "\n" + validation_md)
+        if block["t"] == "h2"
+    ]
+    for index, text in enumerate(headings, 1):
+        _docx_inline(document.add_paragraph(), f"{index}. {text}")
+
+    def emit(items: list[dict]) -> None:
+        for block in items:
+            kind = block["t"]
+            if kind in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                _docx_inline(document.add_heading(level=min(int(kind[1]), 4)), block["text"])
+            elif kind == "p":
+                _docx_inline(document.add_paragraph(), block["text"])
+            elif kind == "quote":
+                paragraph = document.add_paragraph()
+                paragraph.paragraph_format.left_indent = DocxCm(0.6)
+                _docx_inline(paragraph, block["text"])
+                for run in paragraph.runs:
+                    run.italic = True
+            elif kind in {"ul", "ol"}:
+                style = "List Bullet" if kind == "ul" else "List Number"
+                for item in block["items"]:
+                    _docx_inline(document.add_paragraph(style=style), item)
+            elif kind == "code":
+                paragraph = document.add_paragraph()
+                paragraph.paragraph_format.left_indent = DocxCm(0.4)
+                run = paragraph.add_run(block["text"])
+                run.font.name = "Consolas"
+                run.font.size = DocxPt(8.5)
+            elif kind == "table":
+                head = block["head"]
+                grid = document.add_table(rows=1, cols=len(head))
+                grid.style = "Table Grid"
+                for cell, text in zip(grid.rows[0].cells, head):
+                    cell.text = ""
+                    _docx_inline(cell.paragraphs[0], text)
+                    for run in cell.paragraphs[0].runs:
+                        run.bold = True
+                for row in block["rows"]:
+                    cells = grid.add_row().cells
+                    values = (row + [""] * len(head))[: len(head)]
+                    for cell, text in zip(cells, values):
+                        cell.text = ""
+                        _docx_inline(cell.paragraphs[0], text)
+                document.add_paragraph()
+            elif kind == "hr":
+                document.add_paragraph()
+
+    emit(blocks(overview_md))
+    document.add_page_break()
+    emit(blocks(validation_md))
+
+    document.add_page_break()
+    document.add_heading("Appendix A — Visual evidence (320 px / 360 px captures)", level=1)
+    appendix_note = document.add_paragraph()
+    _docx_inline(
+        appendix_note,
+        "Captures (b) are labelled **simulated confidence response**: this environment has no vision "
+        "key (`vision_keys: 0`), so the confidence gate was driven by an injected response while the "
+        "UI path itself is the real client code. Captures (a), (c) and (d) are real responses from "
+        "the running service.",
+    )
+    for name, caption in EVIDENCE_CAPTIONS:
+        source = EVIDENCE / name
+        if not source.exists():
+            document.add_paragraph(f"[missing evidence file: {name}]")
+            continue
+        pieces = _docx_slices(source)
+        for index, piece in enumerate(pieces, 1):
+            document.add_picture(str(piece), width=DocxCm(4.4))
+            if len(pieces) > 1:
+                label = document.add_paragraph()
+                label_run = label.add_run(f"{name} — column {index} of {len(pieces)}")
+                label_run.italic = True
+                label_run.font.size = DocxPt(8)
+        caption_paragraph = document.add_paragraph()
+        _docx_inline(caption_paragraph, caption)
+        document.add_page_break()
+
+    footer = section.footer.paragraphs[0]
+    footer.text = f"KathaPulse AI · Stage 4 Final Report · {BUILD} · {DATE}"
+    footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    document.save(str(path))
+
+
 def cover_html(title: str, subtitle: str, rows: list[tuple[str, str]], toc: list[str]) -> str:
     items = "".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>" for k, v in rows)
     toc_html = ""
@@ -929,37 +1187,31 @@ def build_report() -> list[Path]:
         + to_html(blocks(overview))
         + '<div style="page-break-before: always"></div>'
         + to_html(blocks(validation))
-        + '<h2>Appendix A — Visual evidence (Pass 36 captures)</h2>'
+        + '<h2>Appendix A — Visual evidence (320 px / 360 px captures)</h2>'
         + '<p class="watermark">Captures (b) are labelled <strong>simulated confidence response</strong>: '
         "this environment has no vision key (<code>vision_keys: 0</code>), so the confidence gate was driven "
         "by an injected response while the UI path itself is the real client code.</p>"
-        + "".join(figure_html(n, c) for n, c in [
-            ("01-evidence-card-320.png", "(a) Successful scan, English, 320 px: verdict, identification evidence, provenance “Kerala ground-truth catalogue · verified 2026-11-25”, disclaimer and the RAM-only proof line."),
-            ("01-evidence-card-360.png", "(a) The same evidence card at 360 px: scrollWidth == clientWidth == 360, no horizontal overflow."),
-            ("02-recapture-simulated.png", "(b) Medium confidence → amber retake card, verdict held at “Could not verify”, evidence Unverified. Simulated response, labelled."),
-            ("02-low-rejected-simulated.png", "(b) Low confidence → rejection wording plus the manual-entry card. Simulated response, labelled."),
-            ("03-recall-banner-320.png", "(c) Glycomet 500 · GM2407A · 09/2026: recall + expiry banner above the verdict, pharmacovigilance caveat below (English)."),
-            ("03-recall-banner-ml.png", "(c) The same banner and caveat in Malayalam."),
-            ("03-recall-banner-hi.png", "(c) The same banner and caveat in Hindi."),
-            ("04-voice-reminder-ml.png", "(d) Malayalam: LISTEN, the real no-voice fallback notice, full script, active 1-0-1 countdown."),
-            ("04-voice-reminder-hi.png", "(d) Hindi: same controls and active reminder."),
-        ])
+        + "".join(figure_html(n, c) for n, c in EVIDENCE_CAPTIONS)
     )
-    html_path = OUT / "KathaPulse-AI-Stage4-Report.html"
+    html_path = OUT / "KathaPulse_AI_Stage4_Technical_Report.html"
     html_path.write_text(
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         "<title>KathaPulse AI — Stage 4 Final Report</title>"
         f"<style>{REPORT_CSS}</style></head><body>{body}</body></html>", encoding="utf-8")
-    md_path = OUT / "KathaPulse-AI-Stage4-Report.md"
+    md_path = OUT / "KathaPulse_AI_Stage4_Technical_Report.md"
     md_path.write_text(
         "# KathaPulse AI — Stage 4 Final Report\n\n"
         f"**Build:** {BUILD} · **Date:** {DATE} · **Challenge:** NeuraViz AI Challenge 2026–27, Stage 4\n\n"
         "---\n\n" + overview + "\n\n---\n\n" + validation, encoding="utf-8")
     paths = [html_path, md_path]
     if HAVE_PDF:
-        pdf_path = OUT / "KathaPulse-AI-Stage4-Report.pdf"
+        pdf_path = OUT / "KathaPulse_AI_Stage4_Technical_Report.pdf"
         render_report_pdf(pdf_path, overview, validation)
         paths.append(pdf_path)
+    if HAVE_DOCX:
+        docx_path = OUT / "KathaPulse_AI_Stage4_Technical_Report.docx"
+        render_report_docx(docx_path, overview, validation)
+        paths.append(docx_path)
     return paths
 
 
@@ -1062,6 +1314,9 @@ def main() -> int:
     if not HAVE_PDF:
         print("ReportLab is not installed: PDFs were skipped (HTML/MD only).")
         print("  ./.venv/bin/pip install reportlab  &&  re-run this script")
+    if not HAVE_DOCX:
+        print("python-docx is not installed: the DOCX report was skipped.")
+        print("  ./.venv/bin/pip install python-docx  &&  re-run this script")
     return 0
 
 
