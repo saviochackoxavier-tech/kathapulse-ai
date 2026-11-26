@@ -8,6 +8,8 @@ httpx==0.28.1
 pytest==8.3.4
 
 # Optional extraction tiers (see .env.example). Tesseract also needs the
-# system package: apt-get install tesseract-ocr
+# system package: apt-get install tesseract-ocr, which a serverless platform
+# such as Vercel does not provide -- the tier then stays off and extraction
+# falls back to the vision LLM preset or manual entry.
 # pillow==11.0.0
 # pytesseract==0.3.13
